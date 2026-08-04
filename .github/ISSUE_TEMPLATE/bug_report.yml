@@ -1,0 +1,76 @@
+name: Bug report
+description: Something behaves differently from what the documentation or the code says it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report security vulnerabilities here. See [SECURITY.md](https://github.com/koval-finance/koval-backtrader/blob/main/SECURITY.md) for private reporting.
+
+        If `load_backtest_engine()` cannot find this package, reinstall it first (`pip install -e ".[dev]"` or `pip install --force-reinstall koval-backtrader`) — entry points come from installed metadata, which an older install can leave stale.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you observe? Paste the full error, or the incorrect trades, metrics, or equity curve.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How to reproduce
+      description: The exact CLI command or Python snippet, plus the strategy graph JSON and the candles involved. A reproduction that runs against koval-engine's bundled example data is ideal.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: input
+    id: adapter-version
+    attributes:
+      label: koval-backtrader version
+      placeholder: "0.9.0"
+    validations:
+      required: true
+
+  - type: input
+    id: engine-version
+    attributes:
+      label: koval-engine version
+      description: Output of `koval --version`.
+      placeholder: "0.9.0"
+    validations:
+      required: true
+
+  - type: input
+    id: backtrader-version
+    attributes:
+      label: backtrader version
+      description: Output of `pip show backtrader | grep Version`.
+      placeholder: "1.9.78.123"
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      placeholder: "3.12.4"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 15.2 / Ubuntu 24.04"
+    validations:
+      required: true

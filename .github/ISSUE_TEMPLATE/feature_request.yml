@@ -1,0 +1,44 @@
+name: Feature request
+description: Suggest a capability this backtest engine does not have.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please open an issue before writing a large patch, so effort is not spent on an approach that will not be merged.
+
+        Two things are permanently out of scope. **Real-money trading:** this package replays historical candles through a simulated broker and will never open a venue connection. **Strategy logic:** blocks, graph semantics, and metric definitions belong to [koval-engine](https://github.com/koval-finance/koval-engine) — file those there, so every backtest engine benefits.
+
+        Execution modelling is fees-only today. Slippage, funding, and partial fills are in scope for this repository and are the changes most likely to be accepted.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that this package makes difficult or impossible? Describe the situation, not the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What you think should change. If it would change the shape of `BacktestResult`, the events emitted during a run, or anything else a consumer can observe, say so explicitly.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What you tried, or why writing a separate backtest engine plugin does not solve it.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: dependencies
+    attributes:
+      label: Dependencies
+      options:
+        - label: This would not require a new runtime dependency, or I have explained below why one is unavoidable.
+          required: false

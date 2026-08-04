@@ -1,0 +1,43 @@
+# Release process
+
+## Version truth
+
+The version lives in exactly one place: `[project].version` in
+`pyproject.toml`. `koval_backtrader.__version__` reads it back from installed
+distribution metadata, so there is no second copy to drift. There is no
+`VERSION` file.
+
+## Compatibility with the engine
+
+The dependency is a range — `koval-engine>=0.9.0,<0.10.0` — never an exact
+pin. A plugin that hard-pins one engine patch version forces every downstream
+user into lockstep upgrades.
+
+The range's upper bound is a real statement: it says this adapter speaks the
+engine's current `ENGINE_PROTOCOL_VERSION`. When the engine bumps that
+constant, `check_protocol_version()` starts rejecting specs, and the correct
+response is a new release of this package with a widened range — not a
+loosened bound hoping for the best.
+
+## Cutting a release
+
+1. Update `[project].version`.
+2. Add a `## [x.y.z]` section to `CHANGELOG.md`. The release workflow extracts
+   the notes from it and **fails if the section is missing**, so this is a
+   gate, not a courtesy.
+3. Confirm `./scripts/verify.sh` exits 0.
+4. The owner pushes a `v*` tag.
+
+The tag triggers `release.yml`, which verifies on three Python versions,
+checks that the tag matches the packaged version, extracts the changelog
+entry, builds, runs `twine check --strict`, publishes to PyPI through Trusted
+Publishing (OIDC — no long-lived PyPI credential exists in this repository),
+and only then creates the GitHub release.
+
+Publishing is irreversible: a filename on PyPI can never be reused, even after
+deletion. The gates run before the upload for that reason.
+
+## Update this file when
+
+The release pipeline changes shape, or the engine compatibility policy
+changes.

@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "koval-backtrader"
+version = "0.9.0"
+description = "Backtrader backtest engine for koval-engine: a GPL-3.0 plugin that runs typed strategy graphs through Cerebro."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Koval Contributors" }]
+keywords = [
+    "trading",
+    "backtesting",
+    "backtrader",
+    "algorithmic-trading",
+    "quantitative-finance",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Typing :: Typed",
+]
+dependencies = [
+    "koval-engine>=0.9.0,<0.10.0",
+    "backtrader>=1.9.78",
+    "numpy>=1.26",
+    "pandas>=2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "build>=1.2",
+    "pytest>=8.1",
+    "ruff>=0.4",
+    "setuptools>=68",
+    "twine>=5.1",
+    "wheel",
+]
+
+# How koval-engine finds this engine. The loader takes the entry point named
+# `backtrader`, imports it, and calls it; `create_engine` is that factory.
+[project.entry-points."koval.backtest_engines"]
+backtrader = "koval_backtrader.backtest_runner:create_engine"
+
+[project.urls]
+Homepage = "https://koval.finance"
+Source = "https://github.com/koval-finance/koval-backtrader"
+Issues = "https://github.com/koval-finance/koval-backtrader/issues"
+Changelog = "https://github.com/koval-finance/koval-backtrader/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["koval_backtrader*"]
+
+[tool.setuptools.package-data]
+koval_backtrader = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]

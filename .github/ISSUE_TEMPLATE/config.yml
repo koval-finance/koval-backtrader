@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/koval-finance/koval-backtrader/security/advisories/new
+    about: Report privately through GitHub. Never open a public issue for a security problem.
+  - name: Strategy, block, or metric behaviour
+    url: https://github.com/koval-finance/koval-engine/issues
+    about: Blocks, graph semantics, and metric definitions live in koval-engine. File there so every backtest engine benefits.
