@@ -3,6 +3,12 @@
 Thanks for considering a contribution. Maintainer response times are
 best-effort.
 
+Before changing behaviour, read [docs/architecture.md](docs/architecture.md)
+for how the pieces fit and
+[docs/execution-model.md](docs/execution-model.md) for the fill and fee rules
+your change has to preserve or deliberately break. The whole documentation
+index is [docs/README.md](docs/README.md).
+
 ## Setup
 
 ```bash
@@ -50,10 +56,12 @@ If a guard fails, fix the cause — do not adjust the guard.
 |---|---|
 | `tests/test_entry_point.py` | The `koval.backtest_engines` entry point resolves with no environment variable, and the declared entry point matches the installed one. If this breaks, the package installs but does nothing. |
 | `tests/test_license_headers.py` | Every `.py` under `src/` carries `# SPDX-License-Identifier: GPL-3.0-or-later`. |
-| `tests/test_package_metadata.py` | No source file imports application code; no `koval` package is published from this distribution; the engine dependency stays a range. |
+| `tests/test_package_metadata.py` | No source file imports application code; the installed MIT engine imports no Backtrader; no `koval` package is published from this distribution; the engine dependency stays a range. |
 | `tests/test_public_surface.py` | Maintainer-private paths are never tracked by git. |
 | `tests/test_public_language.py` | No private planning references in the published tree. |
 | `tests/test_release_workflow.py` | The release pipeline gates on lint, tests, and a changelog entry before publishing. |
+| `tests/test_docs.py` | Every link and section anchor in the README and `docs/` resolves, every page is reachable from the index, and the module line counts in `docs/architecture.md` match `src/`. |
+| `tests/test_examples.py` | The README quickstart, `examples/run_backtest.py`, and the `docs/` walkthroughs are executed, and each walkthrough's printed output is compared against the figure the page claims for it. |
 
 Two more expectations, not automated:
 

@@ -14,6 +14,9 @@ exist.
 | The `backtrader` entry point resolves with no environment variable | [`tests/test_entry_point.py`](../tests/test_entry_point.py) |
 | The declared entry point matches the installed one | [`tests/test_entry_point.py`](../tests/test_entry_point.py) |
 | No source file imports application code | [`tests/test_package_metadata.py`](../tests/test_package_metadata.py) |
+| The installed MIT engine never imports Backtrader | [`tests/test_package_metadata.py`](../tests/test_package_metadata.py) |
+| Every hook, event, and trade record agrees on a trade's id | [`tests/test_bt_adapter.py`](../tests/test_bt_adapter.py), [`tests/test_backtest_runner.py`](../tests/test_backtest_runner.py) |
+| `on_bar()` runs once per bar, as it does in the live runner | [`tests/test_bt_adapter.py`](../tests/test_bt_adapter.py) |
 | No `koval` package is published from this distribution | [`tests/test_package_metadata.py`](../tests/test_package_metadata.py) |
 | The engine dependency is a range, not an exact pin | [`tests/test_package_metadata.py`](../tests/test_package_metadata.py) |
 | Maintainer-private paths are never tracked by git | [`tests/test_public_surface.py`](../tests/test_public_surface.py) |

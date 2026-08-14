@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import tomllib
 from pathlib import Path
 
@@ -80,6 +81,43 @@ def test_no_source_file_imports_application_code():
                 offenders.append(f"{path.relative_to(ROOT)}: {name}")
 
     assert offenders == [], f"adapter must not import application code: {offenders}"
+
+
+def _engine_package_root() -> Path:
+    spec = importlib.util.find_spec("koval")
+    assert spec is not None and spec.submodule_search_locations, "koval-engine must be installed"
+    return Path(next(iter(spec.submodule_search_locations)))
+
+
+def _backtrader_importers(root: Path) -> list[str]:
+    return [
+        str(path.relative_to(root))
+        for path in sorted(root.rglob("*.py"))
+        for name in _imported_roots(ast.parse(path.read_text(encoding="utf-8")))
+        if name.split(".")[0] == "backtrader"
+    ]
+
+
+def test_the_installed_engine_never_imports_backtrader():
+    """The licence boundary, checked from this side of it.
+
+    koval-engine is MIT and must not link GPL code. Its own suite enforces
+    this, but the consequence lands here: an engine release that grew a
+    Backtrader import would relicense itself the moment it is installed, and
+    this package is what puts Backtrader on the path in the first place.
+    """
+    root = _engine_package_root()
+    modules = list(root.rglob("*.py"))
+
+    assert len(modules) >= 20, f"only {len(modules)} engine modules found; the scan is broken"
+    assert _backtrader_importers(root) == [], (
+        f"koval-engine must not import backtrader: {_backtrader_importers(root)}"
+    )
+
+
+def test_the_backtrader_import_scan_finds_a_real_import():
+    """Guards the guard: pointed at this GPL package, the scan must object."""
+    assert _backtrader_importers(SRC) != []
 
 
 def test_application_import_detector_catches_a_violation():

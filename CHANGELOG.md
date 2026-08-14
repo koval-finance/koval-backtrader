@@ -4,6 +4,55 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-08-14
+
+### Added
+
+- A `docs/` tree for users and contributors: getting started, the execution
+  model and its limitations, a field-by-field results reference, a guide to
+  writing strategies, an architecture walkthrough, how to write a competing
+  backtest engine, and troubleshooting. Shipped in the source distribution.
+- Rewrote the README around what the package produces and what it does not
+  model, with links into the new documentation.
+- `tests/test_docs.py` pins the new tree: every relative link, every section
+  anchor, and every page's presence in the index and the README.
+  `tests/test_examples.py` executes the documentation's runnable examples, so
+  a page whose output has drifted fails the build.
+
+### Changed
+
+- Results can differ from 0.9.0 for some graphs. Calling `on_bar()` every bar
+  also advances koval-engine's `PlatformAccountState` every bar, so
+  `peak_equity`, `drawdown_pct` and `daily_pnl` now track what happened while
+  a position was open rather than only on flat bars. A graph whose risk gate
+  reads `account.drawdown_pct`, or whose `state.*` blocks track `since_bar`,
+  can therefore reach a different decision than it did before. No block
+  listed by `koval blocks` reads either today and the bundled
+  `ema_cross_trend` example is unchanged, but a result stored from 0.9.0 is
+  no longer guaranteed to reproduce.
+- `tests/test_bt_adapter.py` scanned a directory that does not exist in this
+  repository and could never fail. Replaced with a real licence-boundary
+  guard in `tests/test_package_metadata.py`: the installed koval-engine must
+  not import Backtrader.
+
+### Fixed
+
+- `TRADE_CLOSED` events reported `exit_reason: "unknown"` for every close and
+  an `exit_price` taken from the bar's close: both were read after the
+  adapter had already cleared them. The event now carries the real exit
+  reason and the bracket's fill price.
+- `TRADE_CLOSED`, `on_close_position()`, `on_sl_update()` and
+  `on_tp_update()` received a `trade_id` one lower than the `TRADE_OPENED`
+  for the same trade. Every hook and every event now uses the same id,
+  counting from 1.
+- `DeclarativeStrategy.on_bar()` was never called. The adapter now calls it
+  once per bar, in a position or not, as koval-engine's live runner does — a
+  strategy that keeps per-bar state no longer behaves differently in a
+  backtest than in paper.
+- Closed trades carried Backtrader's process-wide trade reference as `id`, so
+  a second run in the same interpreter numbered its trades from where the
+  first stopped. Ids are now sequential within each run.
+
 ## [0.9.0] - 2026-08-03
 
 First public release. Extracted from a private monorepo with a clean history.
@@ -34,4 +83,5 @@ First public release. Extracted from a private monorepo with a clean history.
 - Releases publish to PyPI through Trusted Publishing (OIDC) with PEP 740
   attestations. No long-lived PyPI credential is used.
 
+[0.9.1]: https://github.com/koval-finance/koval-backtrader/releases/tag/v0.9.1
 [0.9.0]: https://github.com/koval-finance/koval-backtrader/releases/tag/v0.9.0

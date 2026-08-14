@@ -137,6 +137,10 @@ class BTStrategyAdapter(bt.Strategy):
         if self._dd_limit_hit:
             return
         self._inject_state()
+        # Every bar, open position or not: the engine's live runner calls this
+        # after syncing state, and a strategy that behaves differently in a
+        # backtest than it does in paper is worse than no backtest.
+        self._strategy.on_bar()
         self._equity_peak = max(self._equity_peak, self.broker.getvalue())
         if not self.position:
             if self._entry_order is not None and self._entry_order.alive():
@@ -245,7 +249,7 @@ class BTStrategyAdapter(bt.Strategy):
         is_long = self.position.size > 0
         order_fn = self.sell if is_long else self.buy
 
-        trade_id = self._next_trade_id - 1
+        trade_id = self._next_trade_id
         new_sl = self._strategy.on_sl_update(trade_id)
         new_tp = self._strategy.on_tp_update(trade_id)
 
@@ -346,16 +350,21 @@ class BTStrategyAdapter(bt.Strategy):
         elif trade.isclosed:
             stored = self._trade_map.get(trade.ref, {})
             setup = stored.get("setup")
+            # Snapshot both before the reset below: the closed-trade event is
+            # emitted afterwards and has to report what actually happened, not
+            # the cleared state.
+            exit_reason = self._last_exit_reason
+            exit_price = self._pending_exit_price
             result = {
                 "pnl": trade.pnl,
                 "pnl_comm": trade.pnlcomm,
-                "exit_reason": self._last_exit_reason,
+                "exit_reason": exit_reason,
                 "setup": setup,
             }
             self._trade_info[trade.ref] = {
                 "size": stored.get("size", self._pending_entry_size),
-                "exit_reason": _EXIT_REASON_LABELS.get(self._last_exit_reason, "Manual"),
-                "exit_price": self._pending_exit_price,
+                "exit_reason": _EXIT_REASON_LABELS.get(exit_reason, "Manual"),
+                "exit_price": exit_price,
                 "stop_loss": getattr(setup, "stop_loss", 0.0) if setup else 0.0,
                 "take_profit": getattr(setup, "take_profit", 0.0) if setup else 0.0,
                 "sl_calculation": getattr(setup, "sl_calc_expr", "") if setup else "",
@@ -369,16 +378,21 @@ class BTStrategyAdapter(bt.Strategy):
             # reason/price if it ever closes via a non-bracket path.
             self._pending_exit_price = None
             self._last_exit_reason = "unknown"
-            self._strategy.on_close_position(self._next_trade_id - 1, result)
+            self._strategy.on_close_position(self._next_trade_id, result)
             self._emit(
                 EventType.TRADE_CLOSED,
                 {
-                    "trade_id": self._next_trade_id - 1,
+                    "trade_id": self._next_trade_id,
                     "pnl": trade.pnl,
                     "pnl_comm": trade.pnlcomm,
-                    "exit_reason": self._last_exit_reason,
+                    "exit_reason": exit_reason,
                     "entry_price": float(trade.price),
-                    "exit_price": float(self.data.close[0]),
+                    # Every close reaching here came through a bracket leg, and
+                    # a leg knows its fill price. The fallback is insurance for
+                    # a future non-bracket exit path, not a case that fires.
+                    "exit_price": float(
+                        exit_price if exit_price is not None else self.data.close[0]
+                    ),
                 },
             )
             self._next_trade_id += 1

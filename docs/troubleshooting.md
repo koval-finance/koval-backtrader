@@ -1,0 +1,159 @@
+# Troubleshooting
+
+Symptoms first, because that is what you have when you arrive here.
+
+## `NoBacktestEngineError`, but the package is installed
+
+```
+NoBacktestEngineError: No backtest engine named 'backtrader' is registered (available: none)
+```
+
+Entry points are read from **installed distribution metadata**, not from
+`pyproject.toml`. Two things produce this:
+
+- The package is installed into a different interpreter than the one you are
+  running. Check with `python -c "import koval_backtrader, sys; print(sys.executable)"`.
+- An editable install predates the entry-point declaration, leaving stale
+  metadata behind. Reinstall: `pip install -e ".[dev]"`, or
+  `pip install --force-reinstall koval-backtrader`.
+
+Confirm the fix:
+
+```bash
+python -c "from importlib import metadata; print([e.name for e in metadata.entry_points(group='koval.backtest_engines')])"
+```
+
+```
+['backtrader']
+```
+
+If `available:` lists an engine you did not expect, check
+`KOVAL_BACKTEST_ENGINE` in your shell — it overrides discovery entirely.
+
+## `ModuleNotFoundError: koval.adapters.backtrader`
+
+That path never existed in the published package. The import is
+`koval_backtrader`, top-level, because koval-engine owns the `koval` import
+namespace as a regular package and a second distribution adding to it would
+shadow rather than merge. Code or notes using the old path predate the split.
+
+## `ProtocolVersionError`
+
+```
+ProtocolVersionError: spec protocol_version=2 unsupported; engine speaks 1
+```
+
+The installed koval-engine is newer than this adapter and has changed the
+shape of `EngineRunSpec` or `BacktestResult`. Upgrade `koval-backtrader`, or
+pin the engine back inside the declared range (`>=0.9.0,<0.10.0` for 0.9.x).
+The bound is a real statement about protocol compatibility, so widening it
+locally trades a clear error for a silent misinterpretation.
+
+## `GraphValidationError`
+
+The graph failed the engine's schema or structural validation, before
+Backtrader was involved. `koval validate my-graph.json` gives the same answer
+faster, and `koval blocks` lists valid block types with their parameters.
+Block semantics belong to koval-engine — report those
+[there](https://github.com/koval-finance/koval-engine/issues).
+
+## `ValueError: empty OHLCV feed`
+
+A feed array with zero rows reached the runner. Usually a date range with no
+candles, or a CSV filtered down to nothing. Check
+`candles.shape` before building the spec.
+
+## The strategy never trades
+
+Work down the event stream; it exists for exactly this.
+
+```python
+events = []
+load_backtest_engine().run(spec, on_event=events.append)
+
+from collections import Counter
+
+print(Counter(event["event_type"] for event in events))
+```
+
+| What you see | What it means |
+|---|---|
+| Only `SESSION_START` and `SESSION_END` | No signal ever fired. The graph's conditions were never met, or the feed is shorter than the indicator warm-up. |
+| `SIGNAL_DETECTED` but no `ORDER_PLACED` | The computed size was zero or negative. Usually a stop-loss equal to the entry price, or a stop on the wrong side of it. |
+| `ORDER_PLACED` but no `ORDER_FILLED` | The order was cancelled, rejected, or refused for margin — no event is emitted for any of those. A limit or stop entry that price never reached does the same. |
+| `TRADE_OPENED` and no matching `TRADE_CLOSED` | The position was still open when the candles ran out. It counts in `final_capital` but not in `total_trades`. |
+
+To prove the plumbing works, swap the signal block for `signal.every_bar`,
+which fires on every closed bar. If that produces trades, the problem is your
+conditions, not the adapter.
+
+Also check the arithmetic of your warm-up: history arrays are capped at 300
+bars by default (`history_bars`), and a 200-period average over a 100-bar
+feed is not a signal, it is noise.
+
+## A trade appears that the strategy never opened
+
+A position that closes twice, on a bar where both the stop and the target
+were reachable. That is the Backtrader OCO bug, and it means
+`apply_oco_guard()` did not run.
+
+`backtest_runner` calls it at import, so any run through
+`load_backtest_engine()` is covered. If you build `Cerebro` yourself, call it
+at module import:
+
+```python
+from koval_backtrader.oco_patch import apply_oco_guard
+
+apply_oco_guard()
+```
+
+It is idempotent, so calling it twice is fine.
+
+## `TRADE_CLOSED` says `unknown`, or trade ids do not start at 1
+
+Both were bugs in 0.9.0: the closed-trade event reported
+`exit_reason: "unknown"` and the bar's close price whatever actually
+happened, its `trade_id` was one lower than the matching `TRADE_OPENED`, and
+`trades[*]["id"]` was Backtrader's process-wide reference, so a second run in
+one interpreter carried on numbering from the first. All four are fixed —
+upgrade. The trade records themselves were correct in 0.9.0, so stored
+results are still usable apart from those ids. See
+[results.md](results.md#reading-trade_closed).
+
+## The CLI and the Python API disagree
+
+`koval backtest` always passes an execution config, so it charges venue fees.
+A bare `EngineRunSpec` does not, and runs fee-free. Add
+`execution_config={"exchange": "binance", "exchange_type": "future"}` to
+match. See [execution-model.md](execution-model.md#fees).
+
+## Results look too good
+
+They probably are. Before anything else, check the assumptions listed in
+[execution-model.md](execution-model.md#what-is-not-modelled): no slippage,
+no spread, no funding, no partial fills, fills at exact prices. Then:
+
+- Is `total_trades` large enough for the win rate to mean anything?
+- Does the strategy depend on bars where the stop and the target were both
+  reachable? On those, the queue order decides the outcome, not the market.
+- Did you choose the period after seeing the result?
+
+## Backtrader was upgraded and fills changed
+
+`oco_patch.py` reproduces `BackBroker` internals, so an upstream change to
+that code path can alter behaviour without raising anything. Run the full
+suite (`./scripts/verify.sh`), and pay particular attention to
+`tests/test_oco_patch.py`, which pins the same-bar case. Then read the patch
+against the new upstream source before trusting the numbers.
+
+## Nothing here matches
+
+Open an issue with the graph, the candles, and the exact command:
+[koval-backtrader issues](https://github.com/koval-finance/koval-backtrader/issues).
+A reproduction against koval-engine's bundled example data is worth more than
+a paragraph of description. Block behaviour, graph semantics, and metric
+definitions live in [koval-engine](https://github.com/koval-finance/koval-engine/issues).
+
+Security problems go through
+[private reporting](https://github.com/koval-finance/koval-backtrader/security/advisories/new),
+never a public issue.

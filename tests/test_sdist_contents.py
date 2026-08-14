@@ -25,6 +25,7 @@ REQUIRED_SOURCE_FILES = {
     Path("README.md"),
     Path("SECURITY.md"),
     Path("agents_docs/README.md"),
+    Path("docs/README.md"),
     Path("examples/run_backtest.py"),
     Path("pyproject.toml"),
     Path("scripts/verify.sh"),

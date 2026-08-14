@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from koval.engine.backtest_engine import BacktestResult, EngineRunSpec
 
 from koval_backtrader.backtest_runner import create_engine
@@ -45,6 +46,39 @@ def test_runner_produces_a_backtest_result():
     assert result.metrics["total_trades"] >= 1
     assert len(result.equity_curve) > 0
     assert result.equity_curve[0]["equity"] > 0
+
+
+def test_closed_trade_events_carry_the_real_exit_reason_and_fill_price():
+    """The event stream is the audit trail; it has to agree with the trades.
+
+    Both fields are captured during the bracket fill and were previously reset
+    before the event was emitted, so every close reported ``unknown`` and the
+    bar's close price instead of what actually happened.
+    """
+    engine = create_engine()
+    received: list[dict] = []
+    spec = EngineRunSpec(graph=_GRAPH, feeds={"1h": _trending_feed()}, initial_capital=10_000.0)
+
+    result = engine.run(spec, on_event=received.append)
+
+    closed = [event for event in received if event["event_type"] == "TRADE_CLOSED"]
+    assert closed, "expected at least one closed trade"
+    assert {event["payload"]["exit_reason"] for event in closed} <= {"stop_loss", "take_profit"}
+    for event, trade in zip(closed, result.trades, strict=True):
+        assert event["payload"]["exit_price"] == pytest.approx(trade["exit_price"])
+
+
+def test_trade_ids_restart_at_one_for_every_run():
+    """Backtrader's trade reference is per-process, so a second run in the same
+    interpreter used to continue counting from the first."""
+    engine = create_engine()
+    spec = EngineRunSpec(graph=_GRAPH, feeds={"1h": _trending_feed()}, initial_capital=10_000.0)
+
+    first = engine.run(spec)
+    second = engine.run(spec)
+
+    assert [trade["id"] for trade in first.trades] == list(range(1, len(first.trades) + 1))
+    assert [trade["id"] for trade in second.trades] == [trade["id"] for trade in first.trades]
 
 
 def test_runner_forwards_events_to_on_event():

@@ -74,6 +74,14 @@ src/koval_backtrader/
 
 `tests/` is flat and mirrors those module names.
 
+Two documentation trees, and they are not interchangeable. `agents_docs/` is
+this one: invariants, the work loop, release mechanics.
+[docs/](docs/README.md) is written for users and contributors and goes deeper
+into observable behaviour — fill rules, output fields, event payloads. When a
+change alters what a user can observe, both trees need updating, and
+`tests/test_docs.py` pins the human tree's links the way
+`tests/test_agents_docs.py` pins this one's.
+
 ## The seam
 
 ```toml
@@ -112,4 +120,5 @@ Full workflow: [agents_docs/agent_workflow.md](agents_docs/agent_workflow.md).
 | Test failure or unexpected behaviour | [agents_docs/troubleshooting.md](agents_docs/troubleshooting.md) |
 | Writing or changing tests | [agents_docs/testing.md](agents_docs/testing.md) |
 | Cutting a release | [agents_docs/release_process.md](agents_docs/release_process.md) |
+| What a user actually observes | [docs/execution-model.md](docs/execution-model.md), [docs/results.md](docs/results.md) |
 | Everything else | [agents_docs/README.md](agents_docs/README.md) |

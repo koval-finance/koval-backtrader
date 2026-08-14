@@ -334,28 +334,82 @@ def test_same_seed_same_trade_count():
     assert _run() == _run()
 
 
-# --- Modularity: no backtrader import outside adapters/ ---
+# --- Strategy hooks: the adapter drives every one of them ---
 
 
-def test_bt_adapter_is_only_file_with_backtrader_import():
-    import ast
-    import pathlib
+class _HookRecorder(DeclarativeStrategy):
+    """Enters long whenever flat and records the trade id each hook received."""
 
-    koval_root = pathlib.Path("koval")
-    bt_files = []
-    for py in koval_root.rglob("*.py"):
-        if "adapters/backtrader" in str(py):
-            continue
-        try:
-            tree = ast.parse(py.read_text())
-        except SyntaxError:
-            continue
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.Import, ast.ImportFrom)):
-                names = [a.name for a in getattr(node, "names", [])]
-                module = getattr(node, "module", "") or ""
-                if any(n.startswith("backtrader") for n in names) or module.startswith(
-                    "backtrader"
-                ):
-                    bt_files.append(str(py))
-    assert bt_files == [], f"backtrader imported outside adapters/backtrader/: {bt_files}"
+    def __init__(self):
+        super().__init__()
+        self.bars = 0
+        self.bars_while_holding = 0
+        self.opened: list[int] = []
+        self.sl_updated: list[int] = []
+        self.tp_updated: list[int] = []
+        self.closed: list[int] = []
+
+    def on_bar(self) -> None:
+        self.bars += 1
+        if self.position_size > 0.0:
+            self.bars_while_holding += 1
+
+    def should_long(self) -> bool:
+        return self.position_size == 0.0
+
+    def go_long(self) -> TradeSetup:
+        return TradeSetup(
+            direction="long",
+            entry_price=self.close,
+            stop_loss=self.close * 0.90,
+            entry_type="market",
+            why_entry=["hook recorder"],
+        )
+
+    def on_open_position(self, trade_id: int, setup: TradeSetup) -> None:
+        self.opened.append(trade_id)
+
+    def on_sl_update(self, trade_id: int) -> float | None:
+        self.sl_updated.append(trade_id)
+        return None
+
+    def on_tp_update(self, trade_id: int) -> float | None:
+        self.tp_updated.append(trade_id)
+        return None
+
+    def on_close_position(self, trade_id: int, result: dict) -> None:
+        self.closed.append(trade_id)
+
+
+def test_on_bar_runs_once_per_bar_including_while_a_position_is_open():
+    """koval-engine's live runner calls `on_bar` every bar; so must this one,
+    or a strategy behaves differently in a backtest than it does in paper."""
+    strat = _run_cerebro(_HookRecorder, risk_per_trade=1.0)
+    strategy = strat._strategy
+
+    assert strategy.bars == len(strat.data)
+    assert strategy.bars_while_holding > 0
+
+
+def test_every_trade_hook_sees_the_same_trade_id():
+    strat = _run_cerebro(_HookRecorder, risk_per_trade=1.0)
+    strategy = strat._strategy
+
+    assert strategy.opened == list(range(1, len(strategy.opened) + 1))
+    assert strategy.closed == strategy.opened[: len(strategy.closed)]
+    assert strategy.sl_updated, "expected at least one bar with a live stop"
+    assert set(strategy.sl_updated) <= set(strategy.opened)
+    assert set(strategy.tp_updated) <= set(strategy.opened)
+
+
+def test_trade_opened_and_trade_closed_events_agree_on_the_trade_id():
+    strat = _run_cerebro(_AlwaysLong, risk_per_trade=1.0, risk_reward_ratio=2.0)
+    opened = [
+        e.payload["trade_id"] for e in strat._events if e.event_type == EventType.TRADE_OPENED
+    ]
+    closed = [
+        e.payload["trade_id"] for e in strat._events if e.event_type == EventType.TRADE_CLOSED
+    ]
+
+    assert opened == list(range(1, len(opened) + 1))
+    assert closed == opened[: len(closed)]

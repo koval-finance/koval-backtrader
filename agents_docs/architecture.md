@@ -3,6 +3,10 @@
 Four modules, one entry point, no configuration. This document covers what
 each module owns and how a run flows through them.
 
+For the function-by-function walkthrough, and for the fill rules a change
+here has to preserve, read [../docs/architecture.md](../docs/architecture.md)
+and [../docs/execution-model.md](../docs/execution-model.md).
+
 ## The seam
 
 `koval-engine` declares the contract and never implements it:

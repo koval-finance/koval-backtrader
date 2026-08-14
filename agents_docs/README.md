@@ -15,6 +15,11 @@ depth. Load only what the task calls for.
 | [release_process.md](release_process.md) | version truth, changelog gate, the tag pipeline |
 | [troubleshooting.md](troubleshooting.md) | dated failure memory |
 
+The user-facing tree is separate: [../docs/](../docs/README.md) documents
+observable behaviour — fill rules, result fields, event payloads — for people
+rather than agents. Read it when a task changes what a caller can see, and
+update it in the same change.
+
 ## Task routing
 
 | Task | Read first |

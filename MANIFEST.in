@@ -9,6 +9,7 @@ include SECURITY.md
 graft .cursor
 graft .github
 graft agents_docs
+graft docs
 graft examples
 graft scripts
 graft tests

@@ -26,7 +26,11 @@ class TradeListAnalyzer(bt.Analyzer):
 
             size = abs(trade.size) if trade.size else 0
             trade_record = {
-                "id": trade.ref,
+                # Sequential within this run. Backtrader's own trade.ref is a
+                # process-wide counter, so a second backtest in the same
+                # interpreter would otherwise start numbering where the first
+                # one stopped.
+                "id": len(self.trades) + 1,
                 "direction": "LONG" if trade.long else "SHORT",
                 "entry_price": trade.price,
                 "entry_time": entry_date.isoformat().replace("+00:00", "Z"),
