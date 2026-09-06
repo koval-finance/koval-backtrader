@@ -4,6 +4,66 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-09-06
+
+### Fixed
+
+- Bracket legs are submitted without Backtrader's submit-time cash pseudo-check.
+  Previously a short whose notional approached the cash balance could have its
+  take-profit margin-rejected and its stop cancelled through the OCO link,
+  leaving an unprotected position to the end of data. Affects every model,
+  including `legacy_v1` results for such runs.
+- Higher-timeframe bars are injected only once they have closed before the
+  primary decision. Multi-timeframe results for both models can change.
+- `ohlcv_fixed_v1` uses one nearest-millisecond UTC conversion for events,
+  fills and injected state.
+- A margin-rejected, cancelled or rejected entry emits `ORDER_REJECTED` instead
+  of being dropped silently. A cancellation is only notified on the following
+  bar, so the adapter now keeps the cancelled order's reference and still
+  recognises the notification as its own.
+- Higher-timeframe injection no longer rescans the whole higher-timeframe
+  history on every primary bar, which made a two-feed run cost
+  O(primary bars x HTF bars). Only trailing bars can still be forming, so the
+  scan stops at the first closed bar and fetches only the rows it injects.
+  On 8000 hourly bars with 2000 four-hour bars the injection overhead drops
+  from 18.2s to 2.0s, and a two-feed run is now within roughly a quarter of a
+  single-feed run rather than 3.3 times its cost.
+- Timeframe durations are resolved through `koval.engine.timeframe_utils`
+  instead of the exchange kline table, which recognised only
+  `1m/5m/15m/1h/4h/1d`. Labels such as `30m`, `2h` and `1w` ran on 0.9.1 and
+  run again; an unresolvable label is still refused rather than silently
+  treated as a sentinel duration. Durations are now required only when a
+  second feed is present, since only availability filtering needs them.
+- Resolving execution settings no longer imports `koval.exchanges`, which
+  pulled the exchange HTTP clients into a package whose invariant is that no
+  code path reaches a live venue. Importing the runner is correspondingly
+  cheaper.
+- An out-of-range `leverage` that cannot be converted to a float raises
+  `ValueError` like every other configuration error, instead of escaping as
+  `OverflowError`.
+
+### Added
+
+- `ohlcv_fixed_v1.leverage` (optional, default 1) with leverage-aware linear
+  cash accounting and a symmetric margin rule for longs and shorts;
+  `ORDER_REJECTED` events for insufficient margin;
+  take-profit modelled as market-on-touch with full adverse cost; parity
+  fixture test against the MIT engine's shipped fixtures.
+- `tests/test_engine_signal_parity.py` — decision parity against the MIT
+  `LiveEngine` now runs in this gate, where Backtrader is installed.
+- Fill records carry `koval_role` (`entry` / `stop_loss` / `take_profit`).
+
+### Changed
+
+- `history_bars` defaults to `koval.engine.history_window.DEFAULT_HISTORY_BARS`
+  (1000, previously 300), so a backtest and a paper session warm up identically.
+- Higher-timeframe arrays stay `None` until at least one higher-timeframe bar
+  has closed, which is the same "unavailable" state a single-feed run injects.
+  They previously became empty arrays during warm-up — a third state that a
+  strategy guarding with `is None` would fall straight through. The declared
+  type is unchanged (`np.ndarray | None`).
+- Requires `koval-engine>=0.10.0,<0.11.0`.
+
 ## [0.9.1] - 2026-08-14
 
 ### Added

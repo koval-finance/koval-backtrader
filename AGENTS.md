@@ -69,6 +69,9 @@ src/koval_backtrader/
 ├── backtest_runner.py   BacktraderBacktestEngine and the create_engine factory
 ├── bt_adapter.py        DeclarativeStrategy → bt.Strategy bridge, HTF injection
 ├── bt_analyzers.py      equity-curve and closed-trade analyzers
+├── execution_config.py  versioned assumptions and legacy fee resolution
+├── execution_broker.py  synthetic price costs and actual-fill ledger
+├── execution_audit.py   model metadata, attribution and reconciliation
 └── oco_patch.py         guard against a Backtrader OCO ghost-trade bug
 ```
 

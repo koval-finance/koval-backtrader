@@ -9,6 +9,7 @@ rather than a habit because a habit cannot fail the build.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -97,3 +98,19 @@ def test_gitignore_does_not_hide_public_repository_automation():
     }
     hidden = [path for path in REQUIRED_PUBLIC_PATHS if path in ignored]
     assert hidden == [], f"public repository automation must not be ignored: {hidden}"
+
+
+def test_no_module_imports_the_engines_exchange_clients():
+    """The venue clients must stay out of a package that never reaches a venue.
+
+    `koval.exchanges` pulls in the Binance and WhiteBIT clients and the HTTP
+    stack behind them. Importing it for a helper contradicts the no-live-path
+    invariant and makes loading the entry point roughly a second slower.
+    """
+    offenders = [
+        f"{path.name}:{number}: {line.strip()}"
+        for path in sorted((ROOT / "src" / "koval_backtrader").glob("*.py"))
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if re.search(r"^\s*(import|from)\s+koval\.exchanges\b", line)
+    ]
+    assert offenders == [], "koval.exchanges imported into the plugin:\n" + "\n".join(offenders)

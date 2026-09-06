@@ -45,7 +45,7 @@ ProtocolVersionError: spec protocol_version=2 unsupported; engine speaks 1
 
 The installed koval-engine is newer than this adapter and has changed the
 shape of `EngineRunSpec` or `BacktestResult`. Upgrade `koval-backtrader`, or
-pin the engine back inside the declared range (`>=0.9.0,<0.10.0` for 0.9.x).
+pin the engine back inside the declared range (`>=0.10.0,<0.11.0` for 0.10.x).
 The bound is a real statement about protocol compatibility, so widening it
 locally trades a clear error for a silent misinterpretation.
 
@@ -130,13 +130,43 @@ match. See [execution-model.md](execution-model.md#fees).
 ## Results look too good
 
 They probably are. Before anything else, check the assumptions listed in
-[execution-model.md](execution-model.md#what-is-not-modelled): no slippage,
-no spread, no funding, no partial fills, fills at exact prices. Then:
+[execution-model.md](execution-model.md#what-is-not-modelled): funding,
+liquidity, partial fills and liquidation remain unavailable. Check
+`metrics.execution_model.version`: legacy is fees-only; `ohlcv_fixed_v1`
+includes only configured fixed spread/slippage and uniform fees. Then:
 
 - Is `total_trades` large enough for the win rate to mean anything?
 - Does the strategy depend on bars where the stop and the target were both
   reachable? On those, the queue order decides the outcome, not the market.
 - Did you choose the period after seeing the result?
+
+## Execution configuration is rejected
+
+Versioned requests require explicit commission/spread/slippage values in the
+[documented shape](execution-model.md#versions-and-resolved-configuration).
+Do not mix old top-level fee overrides with `execution_model`. Cost numbers
+must be finite, non-negative numeric values, not strings or booleans. Typos,
+unknown modes and unsupported funding/latency/participation fields fail rather
+than being ignored, including in unversioned requests. Valid legacy configs
+retain their previous behavior; malformed configs formerly relying on silent
+fallback must be corrected explicitly.
+
+## A synthetic fill lies outside the candle
+
+This is permitted by `ohlcv_fixed_v1` for market/stop costs. Inspect the fill's
+`reference_price`, `fill_price` and cost components: the reference follows
+Backtrader's matching rules; the difference is a configured assumption. Limit
+prices are still respected. A fill can also fail Backtrader's cash check after
+costs, even if its hypothetical submission price was affordable.
+
+## Funding is zero or account PnL differs from the trade sum
+
+`funding_status: "unavailable"` means no accrual producer exists. Neither
+an empty synthetic series nor today's exchange rate makes historical funding
+available. See the [funding follow-up](execution-research.md#staged-follow-up-and-acceptance-criteria).
+For an open position, account PnL includes its unrealized price PnL and entry
+commission. Use the two [reconciliation identities](results.md#reconciliation).
+Do not subtract spread/slippage a second time from actual-fill PnL.
 
 ## Backtrader was upgraded and fills changed
 

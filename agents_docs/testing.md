@@ -13,6 +13,21 @@
 `test_backtest_runner.py`, `test_state_injection_arrays.py`, and
 `test_block_assembler_integration.py` for the end-to-end path.
 
+`test_execution_realism.py` characterizes legacy fills and pins versioned
+price costs, input rejection, metadata, replay and reconciliation through the
+real runner. `test_execution_broker.py` covers market closes beyond the current
+adapter's bracket-only exit path. These use deterministic candles and no cheat
+modes. Funding remains unavailable; supplied series and analyzer-only nonzero
+adjustments are rejected rather than presented as simulated accrual.
+
+The [readiness review](../docs/execution-validation.md#platform-readiness-review)
+found two defects that a green suite had not caught: HTF tests asserted that
+arrays were present but never that a bar had closed, and timestamp tests never
+compared event and ledger rounding at nonzero millisecond offsets. Both are
+closed and now guarded, which is the standing lesson here — a passing suite
+proves only what it asserts, so a new execution rule needs a test that fails
+for the exact reason the rule exists.
+
 Repository-level guards sit alongside them: entry point, licence headers,
 package metadata, public surface, public language, agent docs, release
 workflow, sdist contents, version.

@@ -1,6 +1,6 @@
 # Architecture
 
-Four modules, one entry point, no configuration. This document covers what
+One entry point, four core modules and three execution modules. This document covers what
 each module owns and how a run flows through them.
 
 For the function-by-function walkthrough, and for the fill rules a change
@@ -41,8 +41,35 @@ to plain dictionaries.
 Feeds arrive as `(N, 6)` float arrays with column 0 holding epoch
 milliseconds; they become `bt.feeds.PandasData` with a UTC index.
 
-Fees are applied only when `execution_config` is present. A run without one is
-fee-free on purpose, so unit tests can assert on raw price action.
+Fees resolve through `execution_config`; a run without one remains fee-free.
+Valid legacy configs preserve prices, PnL and equity. Versioned configs opt into
+explicit costs, and malformed/unknown settings now fail clearly. Every result
+includes a resolved model snapshot and software identity in `metrics`.
+
+### Execution assumptions and costs
+
+`execution_config.py` owns the pure parser and frozen `ExecutionModel`;
+`legacy_v1` freezes fees-only execution and `ohlcv_fixed_v1` requires explicit
+commission, full-spread and slippage bps. No protocol change is required.
+
+`execution_broker.py` adjusts Backtrader-matched prices before `_execute`
+updates cash, commission, positions and notifications. Market/stop costs are
+synthetic and not capped to bar extremes; limits preserve their price bound.
+Submission checks never enter the ledger. Only actual fills receive run-local
+IDs. Existing OCO matching and delayed brackets remain unchanged.
+
+`execution_audit.py` emits metadata and attributes embedded costs without
+debiting anything. Both reference cashflows and closed/open trade PnL must
+reconcile with final broker value. Open entries and their fees are included.
+The analyzer retains the legacy net-of-commission `gross_realized_pnl` alias;
+v1 adds precise gross-price/net-before-funding fields and rejects cosmetic
+funding adjustments. See [../docs/results.md](../docs/results.md).
+
+Funding, fee liquidity roles, partial fills, adaptive impact, extra latency,
+historical exchange filters and liquidation are explicitly unavailable. The
+[decision record](../docs/execution-research.md) assigns every follow-up an
+owner, required data and acceptance criteria. Never attach a volume filler
+without redesigning partial-entry protection and OCO cancellation first.
 
 ### `bt_adapter.py` — the strategy bridge
 
@@ -56,6 +83,17 @@ timeframe feeds — plus position and account state. Outbound, `_submit_entry()`
 and `_place_bracket()` turn a `TradeSetup` into a Backtrader order and its
 stop/take-profit bracket, and `_update_exits()` moves those brackets when the
 strategy asks for a trailing or breakeven change.
+
+HTF injection previously treated a candle's opening timestamp as the time
+its final OHLCV became available, which leaked unfinished HTF bars into
+earlier primary decisions in both models. Since 0.10.0 a row is injected only
+once `htf_open + htf_duration <= primary_open + primary_duration`, and the
+arrays stay `None` until the first bar has closed. Only trailing bars can be
+forming, so the scan stops at the first closed bar rather than re-reading the
+whole HTF history every primary bar.
+
+The [readiness record](../docs/execution-plan.md) carries the compatibility
+decision and the tests; read it before changing multi-timeframe behavior.
 
 Every meaningful decision emits an `EngineEvent` through an optional sink,
 which is what makes a run explainable after the fact rather than a black box
@@ -97,9 +135,9 @@ EngineRunSpec
   → BacktestResult
 ```
 
-Drawdown is computed here from the equity curve; every other metric comes from
-the engine's shared calculation, so a backtest and a paper run report the same
-numbers by construction rather than by coincidence.
+Drawdown and execution auditing are computed here; scalar trade metrics use
+the engine's shared calculations. Paper still has different fill timing and
+protection behavior; shared metric formulas do not establish execution parity.
 
 ## Update this file when
 

@@ -4,6 +4,7 @@ import backtrader as bt
 import numpy as np
 import pandas as pd
 import pytest
+from koval.engine.history_window import DEFAULT_HISTORY_BARS
 from koval.strategy.base.declarative import DeclarativeStrategy
 
 from koval_backtrader.bt_adapter import make_bt_strategy_class
@@ -88,10 +89,12 @@ def test_arrays_grow_with_data_until_cap():
     assert len(s.captured["closes"]) == 10
 
 
-def test_arrays_default_history_bars_is_300():
-    # Don't pass history_bars; default in adapter is 300
-    s = _run(n=400)  # no history_bars override
-    assert len(s.captured["closes"]) == 300
+def test_arrays_default_history_bars_is_the_shared_engine_window():
+    # No history_bars override: the adapter defaults to the one window every
+    # runtime injects, so a backtest and a paper session see the same warmup.
+    s = _run(n=DEFAULT_HISTORY_BARS + 100)
+    assert len(s.captured["closes"]) == DEFAULT_HISTORY_BARS
+    assert DEFAULT_HISTORY_BARS == 1000
 
 
 def test_volume_array_populated():

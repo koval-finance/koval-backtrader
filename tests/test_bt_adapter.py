@@ -413,3 +413,37 @@ def test_trade_opened_and_trade_closed_events_agree_on_the_trade_id():
 
     assert opened == list(range(1, len(opened) + 1))
     assert closed == opened[: len(closed)]
+
+
+class _CancelsItsLimitEntry(DeclarativeStrategy):
+    """Places an unfillable limit entry, then cancels it on the next bar."""
+
+    def should_long(self) -> bool:
+        return self.position_size == 0.0 and self.bar_index == 1
+
+    def go_long(self) -> TradeSetup:
+        return TradeSetup(
+            direction="long",
+            entry_price=self.close * 0.5,  # far below the market: never fills
+            stop_loss=self.close * 0.4,
+            entry_type="limit",
+            why_entry=["cancel stub"],
+            indicators_at_entry={"close": self.close},
+        )
+
+    def should_cancel_entry(self) -> bool:
+        return True
+
+
+def test_cancelled_entry_emits_order_rejected():
+    received = []
+    Adapted = make_bt_strategy_class(_CancelsItsLimitEntry, event_sink=received.append)
+    cerebro = bt.Cerebro()
+    cerebro.adddata(_synthetic_feed(20))
+    cerebro.addstrategy(Adapted)
+    cerebro.run()
+
+    rejected = [e for e in received if e.event_type == EventType.ORDER_REJECTED]
+    assert len(rejected) == 1
+    assert rejected[0].payload["reason"] == "canceled"
+    assert rejected[0].payload["direction"] == "long"

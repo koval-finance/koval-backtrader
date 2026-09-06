@@ -138,3 +138,99 @@ def test_runner_applies_futures_commission_from_execution_config():
     assert charged.metrics["final_capital"] < free.metrics["final_capital"]
     assert any(t["commission"] > 0 for t in charged.trades)
     assert all(t["commission"] == 0 for t in free.trades)
+
+
+@pytest.mark.parametrize("higher_timeframe", [False, True])
+def test_fixed_model_reconciles_graph_trades_and_repeats_exactly(higher_timeframe):
+    feeds = {"1h": _trending_feed()}
+    prices = 150 + 30 * np.sin(np.arange(400) / 12)
+    feeds["1h"][:, 1:5] = np.column_stack([prices, prices + 1, prices - 1, prices])
+    if higher_timeframe:
+        feeds["4h"] = feeds["1h"][::4].copy()
+    spec = EngineRunSpec(
+        graph=_GRAPH,
+        feeds=feeds,
+        initial_capital=10_000.0,
+        execution_config={
+            "exchange": "binance",
+            "exchange_type": "future",
+            "execution_model": {
+                "version": "ohlcv_fixed_v1",
+                "commission_bps": 4,
+                "spread_bps": 20,
+                "slippage_bps": 10,
+            },
+        },
+    )
+    events = []
+    first = create_engine().run(spec, on_event=events.append)
+    second_events = []
+    second = create_engine().run(spec, on_event=second_events.append)
+    assert first == second
+    assert events == second_events
+    assert len(first.trades) > 2
+    audit = first.metrics["execution_costs"]
+    assert audit["reconciliation_error"] == pytest.approx(0, abs=1e-8)
+    for trade in first.trades:
+        costs = trade["execution_costs"]
+        assert {fill["trade_id"] for fill in costs["fills"]} == {trade["id"]}
+        assert trade["realized_pnl"] == pytest.approx(
+            costs["reference_pnl"]
+            - costs["spread_cost"]
+            - costs["slippage_cost"]
+            - costs["commission"]
+        )
+    closed = [e for e in events if e["event_type"] == "TRADE_CLOSED"]
+    for event, trade in zip(closed, first.trades, strict=True):
+        assert event["payload"]["exit_price"] == trade["exit_price"]
+
+
+def test_zero_adjustment_fixed_model_preserves_legacy_graph_prices_and_equity():
+    spec = EngineRunSpec(
+        graph=_GRAPH,
+        feeds={"1h": _trending_feed()},
+        initial_capital=10_000.0,
+        execution_config={"exchange": "binance", "exchange_type": "future"},
+    )
+    legacy = create_engine().run(spec)
+    spec.execution_config["execution_model"] = {
+        "version": "ohlcv_fixed_v1",
+        "commission_bps": 4,
+        "spread_bps": 0,
+        "slippage_bps": 0,
+    }
+    fixed = create_engine().run(spec)
+    assert fixed.equity_curve == legacy.equity_curve
+    for key, value in legacy.metrics.items():
+        if key != "execution_model":
+            assert fixed.metrics[key] == value
+    for before, after in zip(legacy.trades, fixed.trades, strict=True):
+        for key in ("entry_price", "exit_price", "realized_pnl", "commission", "size"):
+            assert after[key] == pytest.approx(before[key])
+
+
+def _feed_at(n: int, step_ms: int) -> np.ndarray:
+    """A trending [N, 6] feed whose bars are ``step_ms`` apart."""
+    candles = _trending_feed(n)
+    candles[:, 0] = np.arange(n, dtype=np.float64) * step_ms + 1_704_067_200_000
+    return candles
+
+
+def test_runner_accepts_timeframes_outside_the_exchange_kline_table():
+    """30m/2h/1w ran on 0.9.1 and must keep running; only HTF needs durations."""
+    engine = create_engine()
+    for timeframe, step_ms in (("30m", 1_800_000), ("2h", 7_200_000), ("1w", 604_800_000)):
+        spec = EngineRunSpec(
+            graph=_GRAPH, feeds={timeframe: _feed_at(400, step_ms)}, initial_capital=10_000.0
+        )
+        assert isinstance(engine.run(spec), BacktestResult)
+
+
+def test_runner_accepts_a_two_feed_pair_outside_that_table():
+    engine = create_engine()
+    spec = EngineRunSpec(
+        graph=_GRAPH,
+        feeds={"30m": _feed_at(400, 1_800_000), "2h": _feed_at(100, 7_200_000)},
+        initial_capital=10_000.0,
+    )
+    assert isinstance(engine.run(spec), BacktestResult)

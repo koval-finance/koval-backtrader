@@ -1,6 +1,6 @@
 # Architecture
 
-A code walkthrough: four modules, roughly 800 lines, and where to look when
+A code walkthrough of the strategy bridge, broker and execution model, and where to look when
 you need to change something.
 
 If you only want the shape of the plugin seam, the
@@ -35,11 +35,20 @@ in either direction, so a caller never links Backtrader by accident.
 
 ```
 src/koval_backtrader/
-├── backtest_runner.py   116 lines  the plugin: spec in, result out
-├── bt_adapter.py        460 lines  DeclarativeStrategy → bt.Strategy bridge
+├── backtest_runner.py   194 lines  the plugin: spec in, result out
+├── bt_adapter.py        605 lines  DeclarativeStrategy → bt.Strategy bridge
 ├── bt_analyzers.py      115 lines  trade list and equity curve extraction
 └── oco_patch.py         148 lines  the Backtrader OCO bug fix
 ```
+
+These four core modules are joined by four execution modules:
+
+| Module | Responsibility |
+|---|---|
+| `execution_config.py` | Validate settings, resolve legacy fees and produce a frozen model without importing Backtrader |
+| `execution_broker.py` | Adjust a matched price before real broker execution; record actual fills only |
+| `execution_audit.py` | Plain metadata, per-trade attribution and run-level reconciliation; never changes cash |
+| `time_conversion.py` | The one UTC millisecond conversion shared by events, ledgers and injected state |
 
 `tests/` is flat and mirrors those names.
 
@@ -50,6 +59,8 @@ enough to read in one sitting. In order:
 
 1. `check_protocol_version(spec)` — refuse a spec from a newer engine rather
    than silently misinterpreting it.
+   Then resolve the execution model and validate v1 input data before strategy
+   assembly; build metadata including the source fingerprint and versions.
 2. `ordered_timeframes()` — sort the feed keys ascending, so `data0` is
    always the lowest timeframe and `data1` the higher one regardless of dict
    order.
@@ -59,10 +70,11 @@ enough to read in one sitting. In order:
 4. `make_bt_strategy_class(type(strategy), event_sink=...)` — wrap the
    strategy's class in a Backtrader class.
 5. Build `Cerebro`: one `PandasData` feed per timeframe, starting cash,
-   commission if `execution_config` is present.
+   resolved commission, and `ExecutionCostBroker` for `ohlcv_fixed_v1`.
 6. `cerebro.run()`, then read the two analyzers.
 7. Reduce to plain data and hand the closed trades to the engine's
-   `build_closed_trade_metrics()`. Only `max_drawdown` is computed here.
+   `build_closed_trade_metrics()`. Add drawdown, execution metadata and v1
+   cost/reconciliation dictionaries inside the existing `metrics` seam.
 
 `_feed_from_ndarray()` converts an `(N, 6)` float array — column 0 is epoch
 milliseconds, then OHLCV — into a Backtrader feed with a UTC index. An empty
@@ -76,7 +88,7 @@ can assert on raw price action. See
 
 ### `bt_adapter.py`
 
-The largest module and the one that decides where orders fill.
+The largest module; it translates decisions into orders and brackets.
 `BTStrategyAdapter` is a `bt.Strategy` that owns no trading logic — every
 decision belongs to the wrapped `DeclarativeStrategy`, and the adapter only
 translates.
@@ -89,7 +101,10 @@ and `get(ago=0, size=n)` are used, so a future bar is unreachable. The
 strategy's `on_bar()` is called immediately afterwards, on every bar whether
 or not a position is open, matching what the engine's live runner does.
 
-If a second feed exists, the same arrays are injected with an `htf_` prefix.
+If a second feed exists, the same arrays are injected with an `htf_` prefix —
+but only for bars that closed before this bar's decision, and they stay `None`
+until the first one has. See
+[execution-model.md](execution-model.md) for the availability rule.
 A third feed is loaded into Cerebro but never injected — the adapter reads
 `self.datas[1]` and nothing beyond it.
 
@@ -135,6 +150,30 @@ that Backtrader has already zeroed.
 
 `EquityCurveAnalyzer` samples `broker.getvalue()` once per bar. That is all
 it does, and it is why `max_drawdown` is a close-to-close figure.
+
+### Execution modules
+
+`resolve_execution_model()` preserves valid legacy fee precedence, but rejects
+malformed or unknown settings. A versioned config has no implicit numeric
+defaults and cannot mix with legacy fee overrides. `ExecutionModel.as_config()`
+returns only replayable resolved settings. There is no Backtrader import in
+the parser and no sibling-repository dependency beyond the existing MIT API.
+
+`ExecutionCostBroker` subclasses the already OCO-patched `BackBroker`. It
+leaves matching, queue order, cash rejection and notifications intact.
+`_execute()` distinguishes submission checks from actual execution, adjusts
+only actual prices, then delegates all accounting to Backtrader. Executed
+size/commission deltas enter a ledger only after a fill occurs. IDs are local
+to a run. Fillers and built-in slippage remain disabled. `trade_fills` indexes
+that ledger by trade ID for constant-time analyzer lookup.
+
+`TradeListAnalyzer` enriches v1 trades from those actual fills. The legacy
+`gross_realized_pnl` alias remains net of commission for compatibility;
+`gross_price_pnl` and `net_pnl_before_funding` provide unambiguous v1 names.
+Nonzero analyzer-only funding is rejected for v1. The runner independently
+reconciles reference cashflows and closed/open PnL against broker value.
+Event callbacks receive a separate copy of payloads so consumers cannot
+rewrite the stored execution assumptions.
 
 ### `oco_patch.py`
 
@@ -186,10 +225,11 @@ EngineRunSpec
 
 | You want to change | Edit | Read first |
 |---|---|---|
-| When or at what price orders fill | `bt_adapter.py` | [execution-model.md](execution-model.md) |
+| Order timing / matched-price adjustments | `bt_adapter.py` / `execution_broker.py` | [execution-model.md](execution-model.md) |
 | A field in the trade list or metrics | `bt_analyzers.py`, or the engine for shared metrics | [results.md](results.md) |
 | What the strategy can see | `_inject_state()` in `bt_adapter.py` | [strategies.md](strategies.md) |
-| Fee or venue handling | `backtest_runner.py` and the engine's execution settings | [execution-model.md](execution-model.md#fees) |
+| Versioned fee/cost settings | `execution_config.py`, wired in `backtest_runner.py` | [execution-model.md](execution-model.md#fees) |
+| Cost attribution and metadata | `execution_audit.py` | [results.md](results.md#reconciliation) |
 | Anything touching the entry point or licensing | `pyproject.toml` | [../agents_docs/invariants.md](../agents_docs/invariants.md) |
 
 Two rules hold everywhere in this tree. Nothing here may import application

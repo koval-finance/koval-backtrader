@@ -10,7 +10,7 @@ depth. Load only what the task calls for.
 |---|---|
 | [invariants.md](invariants.md) | every load-bearing rule and the test that pins it |
 | [agent_workflow.md](agent_workflow.md) | the work loop, the git policy, the hard rules |
-| [architecture.md](architecture.md) | the plugin seam, the four modules, the run path |
+| [architecture.md](architecture.md) | the plugin seam, execution modules, the run path |
 | [testing.md](testing.md) | suite layout, fixtures, what "tested" means here |
 | [release_process.md](release_process.md) | version truth, changelog gate, the tag pipeline |
 | [troubleshooting.md](troubleshooting.md) | dated failure memory |
@@ -26,6 +26,7 @@ update it in the same change.
 |---|---|
 | Anything touching licensing or the entry point | [invariants.md](invariants.md) — before writing code |
 | Change how orders, fills, or exits behave | [architecture.md](architecture.md), then [testing.md](testing.md) |
+| Execution readiness record and deferred effects | [../docs/execution-plan.md](../docs/execution-plan.md) |
 | Upgrade the Backtrader dependency | [invariants.md](invariants.md), then [troubleshooting.md](troubleshooting.md) |
 | Test failure or unexpected behaviour | [troubleshooting.md](troubleshooting.md), then [testing.md](testing.md) |
 | Cutting a release | [release_process.md](release_process.md) |

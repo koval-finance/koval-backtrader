@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from datetime import UTC
+from datetime import UTC, datetime
 
 import backtrader as bt
+
+from koval_backtrader.execution_audit import enrich_closed_trade
+from koval_backtrader.time_conversion import num2utc_ms
 
 
 class TradeListAnalyzer(bt.Analyzer):
@@ -13,16 +16,10 @@ class TradeListAnalyzer(bt.Analyzer):
         if trade.isclosed:
             pnl = trade.pnl
             pnlcomm = trade.pnlcomm
-            entry_date = bt.num2date(trade.dtopen)
-            exit_date = bt.num2date(trade.dtclose)
-            if entry_date.tzinfo is None:
-                entry_date = entry_date.replace(tzinfo=UTC)
-            else:
-                entry_date = entry_date.astimezone(UTC)
-            if exit_date.tzinfo is None:
-                exit_date = exit_date.replace(tzinfo=UTC)
-            else:
-                exit_date = exit_date.astimezone(UTC)
+            # Derived through the one millisecond conversion so the ISO strings
+            # and the execution ledger agree to the millisecond.
+            entry_date = datetime.fromtimestamp(num2utc_ms(trade.dtopen) / 1000, tz=UTC)
+            exit_date = datetime.fromtimestamp(num2utc_ms(trade.dtclose) / 1000, tz=UTC)
 
             size = abs(trade.size) if trade.size else 0
             trade_record = {
@@ -93,6 +90,9 @@ class TradeListAnalyzer(bt.Analyzer):
                 trade_record["exit_price"] = exit_price
                 trade_record["size"] = 0
 
+            trade_fills = getattr(self.strategy.broker, "trade_fills", None)
+            if trade_fills is not None:
+                enrich_closed_trade(trade_record, trade_fills[trade_record["id"]])
             self.trades.append(trade_record)
 
     def get_analysis(self):

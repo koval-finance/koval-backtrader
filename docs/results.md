@@ -15,11 +15,12 @@ class BacktestResult:
 
 No Backtrader object crosses the boundary, and every value below serialises
 with `json.dumps` — numpy scalars survive because `np.float64` subclasses
-`float`. The one field that can be `None` is `profit_factor`.
+`float`. `profit_factor` and optional strategy fields can be `None`.
 
 The examples on this page come from one real run — the bundled
 `ema_cross_trend` graph over `sample-1h.csv`, 1200 hourly candles, 10 000
-starting capital, Binance futures fees.
+starting capital, legacy Binance futures fee assumptions. Numeric examples
+below omit the newly added execution metadata for readability.
 
 ## Metrics
 
@@ -53,11 +54,74 @@ starting capital, Binance futures fees.
 | `avg_loss` | float | Mean `realized_pnl` of losers, so a negative number. |
 | `max_drawdown` | float | Percent. Largest peak-to-trough decline of the equity curve. |
 
-Every metric except `max_drawdown` comes from the engine's shared
+The scalar performance metrics except `max_drawdown` come from the engine's shared
 `build_closed_trade_metrics()`, which is MIT and is also what a paper run
 uses. That is deliberate: a backtest and a live paper session report the same
 numbers because they run the same code, not because two implementations were
 kept in step by hand.
+
+`metrics.execution_model` is added by this plugin for every run. It contains
+the version, replayable `resolved_config`, observed-input description, resolved
+assumptions, `unmodelled_effects`, data-quality disclosure, software versions,
+and `implementation_sha256`. The fingerprint covers the plugin's `.py` source
+names and bytes in sorted order, including editable changes. Store the graph
+and exact input datasets alongside it; a fingerprint identifies code but does
+not archive it. The same metadata appears in `SESSION_START`.
+
+Only `ohlcv_fixed_v1` adds `metrics.execution_costs`. These are quote-currency
+amounts, with no implied USD conversion:
+
+| Field | Meaning |
+|---|---|
+| `spread_cost`, `slippage_cost` | Actual adverse price adjustment allocated to each assumption, including open entries. |
+| `price_adjustment_cost` | Sum of those embedded price costs; never deduct it again from actual-price PnL. |
+| `commission` | Total broker commission on executed fills, including open entries. |
+| `funding_cashflow`, `funding_status` | `0.0` booked and `"unavailable"`; not measured zero funding. |
+| `reference_pnl` | Signed cashflows at matched reference prices plus ending exposure marked at the last close. |
+| `closed_net_pnl` | Sum of closed trade `realized_pnl`. |
+| `open_unrealized_pnl` | Remaining position PnL at actual entry price and last close, before its entry commission. |
+| `open_commission` | Entry commission belonging to the still-open position. |
+| `reconciliation_error` | Final broker capital minus independently reconstructed capital; must be zero within floating-point tolerance. |
+| `fills` | Every actual fill, including entries still open when data ends. No hypothetical, pending, canceled or rejected execution. |
+
+Each fill records `fill_id`, `trade_id` (both scoped to this run),
+`timestamp_ms`, `bar_index`, `role` (`entry`/`exit`), `koval_role`
+(`entry`/`stop_loss`/`take_profit`), `side` (`buy`/`sell`), `order_type`,
+positive `size`, `reference_price`, actual `fill_price`, the three price-cost
+amounts, and `commission`. `koval_role` distinguishes a take-profit — modelled
+as market-on-touch and charged the full adverse adjustment — from an entry
+limit, which is still never filled worse than its limit, even though Backtrader
+names both `limit` in `order_type`. `commission_policy` is `uniform` and
+`liquidity_role` is `unavailable`. An exit references the same trade ID as its
+entry; no process-global Backtrader reference is persisted.
+
+Reference PnL describes the **same fills and sizes** before their price
+adjustment. It is not the PnL of a second, cost-free strategy run: changing fills
+can also change brackets, future decisions, sizing and cash rejection.
+
+### Reconciliation
+
+For the new model, both identities must hold:
+
+```
+final = initial + reference_pnl - spread_cost - slippage_cost - commission
+final = initial + closed_net_pnl + open_unrealized_pnl - open_commission
+```
+
+Funding contributes zero booked cashflow in this version. Actual-price trade
+PnL already includes spread/slippage. The runtime compares the identities
+against the broker using `math.isclose(rel_tol=1e-12, abs_tol=1e-8)` and raises
+if accounting diverges. Open-position commissions explain part of the
+difference between total PnL and the closed trade sum.
+
+Worked synthetic example: capital 10,000; buy two units at reference 100;
+stop at 90; exit bar opens at 85. Configure full spread 20 bps, slippage
+10 bps and uniform commission 4 bps. The actual fills are 100.20 and 84.83.
+Reference PnL is -30; spread cost is 0.37, slippage cost is 0.37, actual-price
+gross PnL is -30.74, and commission is 0.148024. Net PnL is -30.888024 and
+final broker equity is **9969.111976**. See the
+[validation record](execution-validation.md) and the executable probe in
+[`tests/test_execution_realism.py`](../tests/test_execution_realism.py).
 
 Two things worth internalising:
 
@@ -109,9 +173,9 @@ One dictionary per closed trade, in the order they closed.
 | `exit_time` | str | ISO 8601, UTC, `Z`-suffixed. |
 | `duration` | str | `str(exit_time - entry_time)`, e.g. `"3:00:00"` or `"1 day, 4:00:00"`. |
 | `size` | float | Filled quantity, always positive. Captured at entry, because Backtrader reports `0` on a closed trade. |
-| `realized_pnl` | float | Net PnL: after commission, plus `funding_adjustment`. This is what every metric is computed from. |
-| `gross_realized_pnl` | float | PnL after commission but **before** funding. Equal to `realized_pnl` here, since funding is always zero. |
-| `funding_adjustment` | float | Always `0.0` from this package. The field exists for hosts that compute funding themselves and pass it in. |
+| `realized_pnl` | float | Net PnL: after commission, plus `funding_adjustment`. Used for closed-trade statistics; total account PnL and drawdown come from broker equity. |
+| `gross_realized_pnl` | float | Historical compatibility name: **net of commission**, before funding. Not gross trading PnL. Preserved unchanged; prefer the explicit v1 fields below. |
+| `funding_adjustment` | float | `0.0` from the runner because funding is unavailable. It must not be interpreted as observed zero funding. |
 | `commission` | float | Total commission for the round trip, both sides. `0` when the run had no `execution_config`. |
 | `stop_loss` | float | The stop price from the strategy's `TradeSetup`, as at entry. Not updated if the stop was trailed. |
 | `take_profit` | float or null | The target from the `TradeSetup`. **`null` when the strategy set none** and the adapter derived one from `risk_reward_ratio` — the derived level is not written back here. |
@@ -121,6 +185,19 @@ One dictionary per closed trade, in the order they closed.
 | `tp_calculation` | str or null | Same for the target. |
 | `why_entry` | list[str] | The strategy's stated reasons for entering. Graph strategies fill this only when a block produced a reasoning chain. |
 | `indicators_at_entry` | dict | Indicator values captured at entry, if the strategy provided them. |
+
+The new model adds `gross_price_pnl` (actual-fill PnL **before commission**),
+`net_pnl_before_funding` (gross price PnL minus actual commission), and
+`execution_costs` (the cost totals, `reference_pnl`, funding status and the
+two fills belonging to this trade). Entry and exit prices are copied from
+the execution ledger, so they exactly match the event fill prices. The legacy
+trade field set is retained for legacy runs.
+
+For direct legacy analyzer users only, `get_trade_info()` can still inject
+an analyzer-only funding adjustment for compatibility. That hook does not
+change broker cash/equity and is **not a funding model**. The new model rejects
+nonzero adjustments through that hook; implement funding in the broker before
+reporting it as part of net results.
 
 ### Ids are per run
 
@@ -164,7 +241,7 @@ receives a plain dict:
 
 | Event | When | Payload |
 |---|---|---|
-| `SESSION_START` | Adapter construction, before any bar | `strategy` |
+| `SESSION_START` | Adapter construction, before any bar | `strategy`, `execution_model` when called through the runner |
 | `FILTER_REJECTED` | A signal fired but a filter blocked it | `direction` |
 | `FILTER_PASSED` | Signal survived every filter | `direction` |
 | `SIGNAL_DETECTED` | Setup built, before the order | `direction`, `entry_price`, `stop_loss`, `take_profit`, `why_entry`, `indicators_at_entry` |

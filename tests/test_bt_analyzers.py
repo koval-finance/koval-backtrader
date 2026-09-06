@@ -1,7 +1,10 @@
 import backtrader as bt
 import pandas as pd
+import pytest
 
 from koval_backtrader.bt_analyzers import EquityCurveAnalyzer, TradeListAnalyzer
+from koval_backtrader.execution_broker import ExecutionCostBroker
+from koval_backtrader.execution_config import resolve_execution_model
 
 
 def _mock_df(rows=50):
@@ -99,3 +102,30 @@ def test_equity_curve_analyzer_records_one_point_per_bar():
     assert len(curve) == len(df)
     assert {"timestamp", "equity"}.issubset(curve[0])
     assert all(point["equity"] >= 0 for point in curve)
+
+
+@pytest.mark.parametrize("funding", [-12.5, 12.5])
+def test_fixed_model_rejects_analyzer_only_funding(funding):
+    class WithFunding(_OneTradeStrategyWithFundingInfo):
+        def get_trade_info(self, trade_ref):
+            return {**super().get_trade_info(trade_ref), "funding_adjustment": funding}
+
+    model = resolve_execution_model(
+        {
+            "exchange": "binance",
+            "exchange_type": "future",
+            "execution_model": {
+                "version": "ohlcv_fixed_v1",
+                "commission_bps": 0,
+                "spread_bps": 0,
+                "slippage_bps": 0,
+            },
+        }
+    )
+    cerebro = bt.Cerebro()
+    cerebro.setbroker(ExecutionCostBroker(execution_model=model))
+    cerebro.addstrategy(WithFunding)
+    cerebro.addanalyzer(TradeListAnalyzer)
+    cerebro.adddata(bt.feeds.PandasData(dataname=_mock_df()))
+    with pytest.raises(ValueError, match="funding.*unavailable"):
+        cerebro.run()

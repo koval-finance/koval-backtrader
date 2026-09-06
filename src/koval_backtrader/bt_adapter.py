@@ -3,13 +3,19 @@
 # All backtrader-specific code lives here. Strategies never import backtrader.
 from __future__ import annotations
 
+from math import isfinite
+
 import backtrader as bt
 import numpy as np
 from koval.engine.engine_events import EngineEvent, EventType
+from koval.engine.history_window import DEFAULT_HISTORY_BARS
 from koval.engine.logger import get_logger
 from koval.strategy.base.declarative import DeclarativeStrategy
 from koval.strategy.base.trade_setup import TradeSetup
 from koval.strategy.helpers.risk.position_sizer import calculate_position_size
+
+from koval_backtrader.execution_config import FIXED_VERSION
+from koval_backtrader.time_conversion import num2utc_ms, utc_ms
 
 logger = get_logger(__name__)
 
@@ -26,9 +32,12 @@ _DEFAULT_PARAMS: tuple = (
     ("risk_per_trade", 1.0),
     ("leverage", 1.0),
     ("max_drawdown", None),
-    ("history_bars", 300),
+    ("history_bars", DEFAULT_HISTORY_BARS),
     ("strategy_config", {}),
     ("event_sink", None),
+    ("execution_metadata", None),
+    ("primary_timeframe_ms", None),
+    ("htf_timeframe_ms", None),
 )
 
 
@@ -60,17 +69,31 @@ class BTStrategyAdapter(bt.Strategy):
         self._dd_limit_hit: bool = False
         self._entry_exec_bar: int = -1
         self._last_exit_reason: str = "unknown"
+        # A cancel is only notified on the next bar, by which time _entry_order
+        # has been cleared; keep the ref so the notification is still ours.
+        self._cancelled_entry_ref: int | None = None
 
         self._events: list[EngineEvent] = []
-        self._emit(EventType.SESSION_START, {"strategy": type(self._strategy).__name__})
+        start_payload = {"strategy": type(self._strategy).__name__}
+        if self.params.execution_metadata is not None:
+            start_payload["execution_model"] = self.params.execution_metadata
+        self._emit(EventType.SESSION_START, start_payload)
 
     def _create_strategy_instance(self) -> DeclarativeStrategy:
         raise NotImplementedError
 
+    def _timestamp_ms(self) -> int:
+        timestamp = self.data.datetime.datetime(0)
+        metadata = self.params.execution_metadata
+        if metadata is not None and metadata["version"] == FIXED_VERSION:
+            return utc_ms(timestamp)
+        # Legacy keeps naive-datetime epoch conversion for reproduction only.
+        return int(timestamp.timestamp() * 1000)
+
     def _emit(self, event_type: EventType, payload: dict | None = None) -> None:
         bar = len(self.data) if self.data is not None else 0
         try:
-            ts = int(self.data.datetime.datetime(0).timestamp() * 1000)
+            ts = self._timestamp_ms()
         except Exception:
             ts = 0
         event = EngineEvent(
@@ -97,7 +120,7 @@ class BTStrategyAdapter(bt.Strategy):
             s.volume = 0.0
         s.bar_index = len(self.data)
         try:
-            s.timestamp_ms = int(self.data.datetime.datetime(0).timestamp() * 1000)
+            s.timestamp_ms = self._timestamp_ms()
         except Exception:
             s.timestamp_ms = 0
         s.account_value = self.broker.getvalue()
@@ -119,19 +142,44 @@ class BTStrategyAdapter(bt.Strategy):
             except (AttributeError, IndexError):
                 s.volumes = np.zeros(n, dtype=float)
 
-        # Higher-timeframe history — injected only when a 2nd feed is present.
+        # Higher-timeframe history — injected only when a 2nd feed is present,
+        # and only for bars that CLOSED before this primary bar's decision. A
+        # forming HTF bar reveals its own future, so it is never shown.
         if len(self.datas) > 1:
             htf = self.datas[1]
-            m = min(int(self.params.history_bars), len(htf))
-            if m > 0:
-                s.htf_closes = np.array(htf.close.get(ago=0, size=m), dtype=float)
-                s.htf_highs = np.array(htf.high.get(ago=0, size=m), dtype=float)
-                s.htf_lows = np.array(htf.low.get(ago=0, size=m), dtype=float)
-                s.htf_opens = np.array(htf.open.get(ago=0, size=m), dtype=float)
-                try:
-                    s.htf_volumes = np.array(htf.volume.get(ago=0, size=m), dtype=float)
-                except (AttributeError, IndexError):
-                    s.htf_volumes = np.zeros(m, dtype=float)
+            available = len(htf)
+            if self.params.primary_timeframe_ms is None or self.params.htf_timeframe_ms is None:
+                raise ValueError(
+                    "a higher-timeframe feed requires primary_timeframe_ms and "
+                    "htf_timeframe_ms so only closed HTF bars are injected"
+                )
+            if available > 0:
+                decision_ms = utc_ms(self.data.datetime.datetime(0)) + int(
+                    self.params.primary_timeframe_ms
+                )
+                htf_ms = int(self.params.htf_timeframe_ms)
+                # Only trailing bars can still be forming, so stop at the first
+                # closed one. Rescanning the whole history on every primary bar
+                # would make injection O(primary bars x HTF bars).
+                skip = 0
+                while skip < available and num2utc_ms(htf.datetime[-skip]) + htf_ms > decision_ms:
+                    skip += 1
+                m = min(int(self.params.history_bars), available - skip)
+                # No closed HTF bar is the same "unavailable" state as no HTF
+                # feed: leave the arrays None rather than inventing an empty one.
+                if m > 0:
+
+                    def _line(line, m=m, skip=skip):
+                        return np.array(line.get(ago=skip, size=m), dtype=float)
+
+                    s.htf_closes = _line(htf.close)
+                    s.htf_highs = _line(htf.high)
+                    s.htf_lows = _line(htf.low)
+                    s.htf_opens = _line(htf.open)
+                    try:
+                        s.htf_volumes = _line(htf.volume)
+                    except (AttributeError, IndexError):
+                        s.htf_volumes = np.zeros(m, dtype=float)
 
     def next(self) -> None:
         if self._dd_limit_hit:
@@ -145,6 +193,7 @@ class BTStrategyAdapter(bt.Strategy):
         if not self.position:
             if self._entry_order is not None and self._entry_order.alive():
                 if self._strategy.should_cancel_entry():
+                    self._cancelled_entry_ref = self._entry_order.ref
                     self.cancel(self._entry_order)
                     self._entry_order = None
                     return
@@ -196,6 +245,35 @@ class BTStrategyAdapter(bt.Strategy):
         if size <= 0:
             return
 
+        metadata = self.params.execution_metadata
+        if metadata is not None and metadata["version"] == FIXED_VERSION:
+            model = metadata["resolved_config"]["execution_model"]
+            reference = float(setup.entry_price)
+            required = size * reference / float(model["leverage"]) + (
+                size * reference * float(model["commission_bps"]) / 10_000
+            )
+            available = float(self.broker.getvalue()) - self._margin_in_use()
+            # A non-finite order is a defect, not an affordability outcome: it
+            # must fail loudly rather than be reported as a margin rejection.
+            if not isfinite(size) or not isfinite(reference) or not isfinite(required):
+                raise ValueError(
+                    "execution price, size and notional must be finite, with positive price"
+                )
+            if required > available:
+                self._emit(
+                    EventType.ORDER_REJECTED,
+                    {
+                        "direction": setup.direction,
+                        "entry_type": setup.entry_type,
+                        "size": size,
+                        "price": reference,
+                        "reason": "insufficient_margin",
+                        "required": required,
+                        "available": available,
+                    },
+                )
+                return
+
         self._pending_setup = setup
         is_long = setup.direction == "long"
         order_fn = self.buy if is_long else self.sell
@@ -219,6 +297,22 @@ class BTStrategyAdapter(bt.Strategy):
             },
         )
 
+    # Exit legs only ever close exposure, so the submit-time cash pseudo-execution
+    # is meaningless for them and, for a short whose notional is near the cash
+    # balance, wrongly margin-rejects the second OCO leg (both legs are pseudo-
+    # executed against one running cash figure). Backtrader submits its own
+    # bracket children with the same flag. Actual execution still refuses to
+    # OPEN exposure without cash; a closing fill never needs cash.
+    def _margin_in_use(self) -> float:
+        # The adapter only enters when flat, so this is zero at the check today;
+        # it keeps the rule correct if pyramiding is ever allowed.
+        if not self.position:
+            return 0.0
+        model = self.params.execution_metadata["resolved_config"]["execution_model"]
+        return (
+            abs(float(self.position.size)) * float(self.position.price) / float(model["leverage"])
+        )
+
     def _place_bracket(self, exec_price: float, size: float, setup: TradeSetup) -> None:
         sl = setup.stop_loss
         tp = setup.take_profit
@@ -230,14 +324,36 @@ class BTStrategyAdapter(bt.Strategy):
                 else exec_price - dist * self.params.risk_reward_ratio
             )
         if setup.direction == "long":
-            self._stop_order = self.sell(price=sl, exectype=bt.Order.Stop, size=size)
+            self._stop_order = self.sell(
+                price=sl,
+                exectype=bt.Order.Stop,
+                size=size,
+                _checksubmit=False,
+                koval_role="stop_loss",
+            )
             self._tp_order = self.sell(
-                price=tp, exectype=bt.Order.Limit, size=size, oco=self._stop_order
+                price=tp,
+                exectype=bt.Order.Limit,
+                size=size,
+                oco=self._stop_order,
+                _checksubmit=False,
+                koval_role="take_profit",
             )
         else:
-            self._stop_order = self.buy(price=sl, exectype=bt.Order.Stop, size=size)
+            self._stop_order = self.buy(
+                price=sl,
+                exectype=bt.Order.Stop,
+                size=size,
+                _checksubmit=False,
+                koval_role="stop_loss",
+            )
             self._tp_order = self.buy(
-                price=tp, exectype=bt.Order.Limit, size=size, oco=self._stop_order
+                price=tp,
+                exectype=bt.Order.Limit,
+                size=size,
+                oco=self._stop_order,
+                _checksubmit=False,
+                koval_role="take_profit",
             )
 
     def _update_exits(self) -> None:
@@ -271,10 +387,21 @@ class BTStrategyAdapter(bt.Strategy):
         target_tp = new_tp if tp_changed else current_tp
 
         self.cancel(self._stop_order)
-        self._stop_order = order_fn(price=target_sl, exectype=bt.Order.Stop, size=size)
+        self._stop_order = order_fn(
+            price=target_sl,
+            exectype=bt.Order.Stop,
+            size=size,
+            _checksubmit=False,
+            koval_role="stop_loss",
+        )
         if target_tp is not None:
             self._tp_order = order_fn(
-                price=target_tp, exectype=bt.Order.Limit, size=size, oco=self._stop_order
+                price=target_tp,
+                exectype=bt.Order.Limit,
+                size=size,
+                oco=self._stop_order,
+                _checksubmit=False,
+                koval_role="take_profit",
             )
         else:
             self._tp_order = None
@@ -323,8 +450,26 @@ class BTStrategyAdapter(bt.Strategy):
                 self._last_exit_reason = "take_profit"
 
         elif order.status in (order.Canceled, order.Margin, order.Rejected):
-            if order == self._entry_order:
+            if order == self._entry_order or order.ref == self._cancelled_entry_ref:
                 self._entry_order = None
+                self._cancelled_entry_ref = None
+                setup = self._pending_setup
+                self._pending_setup = None
+                reason = {
+                    order.Margin: "insufficient_margin",
+                    order.Canceled: "canceled",
+                    order.Rejected: "rejected",
+                }[order.status]
+                self._emit(
+                    EventType.ORDER_REJECTED,
+                    {
+                        "direction": getattr(setup, "direction", None),
+                        "entry_type": getattr(setup, "entry_type", None),
+                        "size": abs(float(order.created.size)),
+                        "price": float(order.created.price or 0.0),
+                        "reason": reason,
+                    },
+                )
 
     def notify_trade(self, trade: bt.Trade) -> None:
         if trade.justopened:

@@ -20,6 +20,7 @@ exist.
 | No `koval` package is published from this distribution | [`tests/test_package_metadata.py`](../tests/test_package_metadata.py) |
 | The engine dependency is a range, not an exact pin | [`tests/test_package_metadata.py`](../tests/test_package_metadata.py) |
 | Maintainer-private paths are never tracked by git | [`tests/test_public_surface.py`](../tests/test_public_surface.py) |
+| The venue clients are never imported into this package | [`tests/test_public_surface.py`](../tests/test_public_surface.py) |
 | No private planning language reaches the published tree | [`tests/test_public_language.py`](../tests/test_public_language.py) |
 | The sdist contains the whole public test suite | [`tests/test_sdist_contents.py`](../tests/test_sdist_contents.py) |
 | The release pipeline gates on lint, tests, and the changelog | [`tests/test_release_workflow.py`](../tests/test_release_workflow.py) |
@@ -43,6 +44,15 @@ that consumes both.
 The practical failure mode is not malice, it is convenience: someone needs one
 helper from the app, imports it, and an MIT codebase silently acquires a GPL
 dependency. That is why the direction is a test and not a note.
+
+`koval.exchanges` is a narrower case of the same convenience, and it is
+forbidden. It carries the Binance and WhiteBIT clients and the HTTP stack
+behind them, so importing it for one helper contradicts the no-live-venue rule
+and puts a network client behind the entry point every consumer imports. 0.10.0
+removed exactly such an import, added for a timeframe-duration lookup that
+`koval.engine.timeframe_utils` already answers. If a helper you need lives only
+under `koval.exchanges`, that is a signal it belongs in `koval.engine`, not a
+reason to reach across.
 
 ## The import namespace
 
@@ -70,6 +80,13 @@ handling. That is a deliberate, fragile coupling: an upstream change to the
 patched code path can corrupt fills silently rather than raising. Treat any
 Backtrader upgrade as a behavioural change requiring a full test run, and read
 [troubleshooting.md](troubleshooting.md) first.
+
+`execution_broker.py` also couples to `BackBroker._execute`: hypothetical
+submission checks must stay separate from real executions, and actual fill
+prices must reach the broker before fees and account value are computed.
+Any upstream upgrade needs the limit/gap, cash-rejection, OCO and reconciliation
+tests in addition to a source review. The audited version and source hash are
+recorded in [../docs/execution-research.md](../docs/execution-research.md).
 
 ## Update this file when
 
