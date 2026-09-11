@@ -103,16 +103,17 @@ evidence, where agreement between a thing and itself is not.
 
 `tests/test_paper_parity.py` compares baseline v1/v2 fills and full account
 snapshots with no active waivers. `tests/test_realistic_evidence.py` adds evidence
-and partial lifecycle scenarios. It has one exact bar-equity waiver for the
-published engine's partial-exit mark defect, using the engine comparator:
-unexpected differences and unused waivers both fail. Quantity/volume regressions
-also pin deliberate plugin corrections. Never broaden a waiver to silence a
-failure. Update [the review record](../docs/execution-validation.md) when an
-upstream fix changes these boundaries.
+and partial lifecycle scenarios with no active waivers against engine 0.11.1.
+The engine comparator still rejects unexpected differences and unused waivers.
+Quantity/volume regressions compare both implementations. Never broaden a
+waiver to silence a failure. Update
+[the review record](../docs/execution-validation.md) with measured acceptance.
 
-`strategy_account.py` is a version-scoped private bridge: graph contexts must
-read the actual broker account. Do not remove its graph regression until the
-engine exposes and the plugin adopts a public binding hook.
+`strategy_account.py` prefers the public engine `bind_account` hook and keeps
+the narrow private fallback only for engine 0.11.0; graph contexts
+must read the actual broker account. `test_runtime_conformance.py` compares
+complete account snapshots, trade arithmetic and identities through real
+LiveEngine replay and Backtrader execution.
 
 Source distribution identity is pinned by `tests/test_dist_artifacts.py` and
 `scripts/check_dist.py`. A version is not enough if local package bytes differ.

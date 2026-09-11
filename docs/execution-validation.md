@@ -1,6 +1,6 @@
 # Execution validation and 0.11 release review
 
-Prepared 2026-09-11 against **published PyPI koval-engine 0.11.0** and
+The original 0.11.0 review below was prepared 2026-09-11 against **published PyPI koval-engine 0.11.0** and
 Backtrader 1.9.78.123. The engine's
 [Runtime and identity contract — 0.11](https://github.com/koval-finance/koval-engine/blob/v0.11.0/agents_docs/runtime_contract.md)
 was read before implementing the plugin changes. The source of truth for
@@ -9,6 +9,46 @@ observable rules is [execution-model.md](execution-model.md).
 Earlier notes attributing 694-line versus 1656-line paper brokers to the
 published 0.10.0 release confused a local artifact with the release. Those
 claims and the associated stale exemptions are superseded by this record.
+
+## 0.11.1 paired acceptance
+
+Prepared 2026-09-12. Engine and plugin candidates are both 0.11.1; the plugin
+accepts engine `>=0.11.0,<0.12.0`, but the corrected parity matrix requires
+engine 0.11.1. The 0.11.0 fallback preserves prior integration behavior without
+claiming the new engine fixes. The old five-gap table is retained below as
+historical evidence, not as the current acceptance status.
+
+| Previous gap | 0.11.1 behavior and evidence |
+|---|---|
+| Partial-exit residual mark | Paper uses bar close; lagged-impact differential test passes without its now-stale waiver |
+| Risk/volume quantity steps | Final capped entries and protective exits obey lot steps; instrument cases compare both runtimes |
+| Reserved unfilled liquidity | Only actual entry fills consume the shared budget; protection can use the remainder that bar |
+| Graph account ownership | Public `bind_account` / `account_snapshot` hook; legacy fallback used only on 0.11.0; graph tests retained |
+| Terminal policy | Explicit paper `mark_at_last_close` matches backtest; default paper flattening remains available |
+| Full-runtime gap and partial exit | Paper acknowledges already-matched protection without rejecting a gap or restoring exited quantity |
+
+`test_runtime_conformance.py` runs 12 long/short full-runtime combinations with
+nonzero fees, spread and slippage. They exercise real GraphStrategy contexts
+with controlled entry decisions and compare every AccountSnapshot field,
+closed-trade arithmetic, terminal equity, market/candle/evidence identity and
+run parameters. Existing automatic-signal, public fixture and generated baseline
+comparisons remain. No active parity waiver remains in this candidate pair.
+Funding stays a separate account cashflow. Live trade `pnl` and plugin
+`net_pnl_before_funding` are compared explicitly; field names are not assumed
+interchangeable. The partial-funding and instrument cases include ambiguous
+bars and conservative stop-first exits.
+
+### Candidate verification
+
+The plugin's full `./scripts/verify.sh` passed **801 tests**, lint and formatting
+against the installed engine 0.11.1 candidate wheel. Both packages' wheel and
+sdist source/version gates and strict Twine checks passed. A fresh environment
+outside both checkouts imported the installed wheels, passed `pip check` and
+plugin discovery, and passed **95 selected conformance/account tests**.
+A separate normal installation of published engine 0.11.0 plus this plugin wheel
+passed **81 tests from the original 0.11.0 test snapshot**, preserving the older
+behavior and its documented limits. This does not claim corrected parity on
+engine 0.11.0. Remote release CI and authenticated sandbox checks remain separate.
 
 ## Verification matrix
 
@@ -76,6 +116,9 @@ additional failing regressions. Corrections include:
   observed rejecting the pre-existing stale local 0.11.0 artifacts.
 
 ## Remaining engine 0.11 integration gaps
+
+Historical 0.11.0 findings, resolved for the 0.11.1 candidate pair described
+above. Keep this record for reproducibility of older runs.
 
 These are limits on cross-runtime conformance, not instructions to change
 engine source from this repository. Keep the plugin's financially consistent

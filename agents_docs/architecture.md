@@ -144,13 +144,13 @@ protection behavior; shared metric formulas do not establish execution parity.
 protection. `evidence_execution.py` mutates an incremental account ledger from
 funding, fills and fees. `execution_evidence.py` validates public engine evidence
 and produces JSON replay configuration. `strategy_account.py` binds the graph's
-private 0.11 account reader to broker-authoritative snapshots; no strategy or
-analyzer may book those cashflows a second time.
+public 0.11.1 account reader to broker-authoritative snapshots, with the old
+fallback retained for 0.11.0. No strategy or analyzer may book cashflows twice.
 
 The runner negotiates capabilities, enforces v2 aligned contiguous data, refuses
 more than two timeframes and prevents trailing HTF bars from replaying a primary
 bar. Account snapshots cost O(1) in ledger length; the full ledger is exported
-at session end. Known engine gaps are in
+at session end. Paired acceptance and model limits are in
 [../docs/execution-validation.md](../docs/execution-validation.md).
 
 ## Update this file when

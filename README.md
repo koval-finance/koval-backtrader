@@ -141,7 +141,7 @@ an OHLCV partial-fill/latency/impact proxy. The
 includes canonical markets, replayable evidence and capability negotiation.
 
 Every published engine fixture runs. Baseline v1/v2 scenarios agree without
-waivers; advanced combinations have narrowly documented engine-side gaps in
+waivers against engine 0.11.1; advanced and full-runtime acceptance is recorded in
 [the 0.11 review](https://github.com/koval-finance/koval-backtrader/blob/main/docs/execution-validation.md).
 No backtest is certified to reproduce real venue outcomes.
 

@@ -390,6 +390,38 @@ def test_graph_nodes_read_the_actual_execution_account(monkeypatch):
     assert snapshot.balance == pytest.approx(fixture["capital"] - fill["commission"])
 
 
+def test_account_binding_uses_the_public_engine_hook():
+    from koval.strategy.graph.strategy import build_graph_strategy
+
+    from koval_backtrader.execution_account import ExecutionAccount
+    from koval_backtrader.strategy_account import bind_strategy_account
+
+    strategy = build_graph_strategy(
+        {"blocks": [{"id": "clock", "type": "fact.every_bar", "params": {}}], "connections": []}
+    )()
+    account = ExecutionAccount(1000)
+    bind_strategy_account(strategy, account)
+    account.on_fee(1)
+    assert strategy.account_snapshot() == account.snapshot()
+
+
+def test_account_binding_preserves_the_engine_0110_graph_fallback():
+    from koval.strategy.graph.strategy import build_graph_strategy
+
+    from koval_backtrader.execution_account import ExecutionAccount
+    from koval_backtrader.strategy_account import bind_strategy_account
+
+    strategy = build_graph_strategy(
+        {"blocks": [{"id": "clock", "type": "fact.every_bar", "params": {}}], "connections": []}
+    )()
+    strategy.bind_account = None
+    account = ExecutionAccount(1000)
+    bind_strategy_account(strategy, account)
+    account.on_fee(1)
+    strategy.account_value = 999
+    assert strategy._ctx().account == account.snapshot()
+
+
 def test_daily_pnl_accumulates_within_one_utc_day(monkeypatch):
     rows = [SIGNAL, SIGNAL, (105, 106, 104, 105, 1000)]
     _, _, seen = run(monkeypatch, rows, config=fixed_config())

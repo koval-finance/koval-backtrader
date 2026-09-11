@@ -268,7 +268,7 @@ The canonical fields are `schema_version: koval_run_identity_v1`,
 engine `koval_candle_stream_sha256_v1`; the older `feeds` hashes use the plugin
 encoding and are not interchangeable. Execution identity uses the paired paper
 profile and hashes all supplied normalized evidence. `identified_simulation`
-means identifiable inputs; check the known runtime gaps before claiming parity.
+means identifiable inputs; compare the complete inputs and terminal policies before claiming parity.
 `run_parameters.end_of_data_policy` is `mark_at_last_close`, not paper's flatten.
 
 ## Research metrics

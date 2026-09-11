@@ -55,8 +55,12 @@ and verify discovery plus the published engine fixtures from that environment.
 Rebuild after changing any package source. Keep artifacts local; the tag workflow
 builds and publishes independently from the human's committed tree.
 
-Engine 0.11.0 is publicly available. The 0.11 review documents advanced parity
-limits; never convert passing build checks into an exchange-fidelity claim.
+For 0.11.1, publish engine 0.11.1 first and verify its PyPI availability before
+pushing the plugin tag so the release gate resolves the corrected engine pair.
+The declared floor remains 0.11.0, with its prior graph fallback; complete
+0.11.1 parity acceptance requires engine 0.11.1. Candidate wheel acceptance
+is recorded in [../docs/execution-validation.md](../docs/execution-validation.md).
+Never convert passing build checks into an exchange-fidelity claim.
 
 ## Update this file when
 

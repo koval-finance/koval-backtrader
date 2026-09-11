@@ -50,7 +50,7 @@ modules import Backtrader; evidence and identity modules use pure engine contrac
 | `realistic_broker.py` | Independent v2 matching, partial lifecycle, volume budget and liquidation |
 | `evidence_execution.py` | Funding cursor, evidence fees and actual cashflow ledger |
 | `execution_evidence.py` | Strict typed/JSON normalized evidence validation and replay |
-| `strategy_account.py` | Narrow engine-0.11 graph account binding; replace with a public engine hook when available |
+| `strategy_account.py` | Public engine account-snapshot binding for graph and custom strategies |
 | `execution_broker.py` | Adjust a matched price before real broker execution; record actual fills only |
 | `execution_audit.py` | Plain metadata, per-trade attribution and run-level reconciliation; never changes cash |
 | `execution_account.py` | Feed the engine's `PlatformAccountState` and shape the account a strategy sizes risk from |
@@ -256,5 +256,6 @@ Partial callbacks update the graph's actual quantity and margin. Evidence
 serialization strips raw responses but preserves normalized content identity.
 The deprecated plugin reproducibility grade never promises certification.
 
-Read [execution-validation.md](execution-validation.md) for current engine gaps;
-matching baseline fixtures is not general advanced-graph parity.
+`strategy_account.py` uses the public engine 0.11.1 `bind_account` hook.
+Read [execution-validation.md](execution-validation.md) for measured acceptance
+and model limits. Matching simulations does not establish venue fill fidelity.

@@ -76,8 +76,10 @@ should fire, so they are injected too.
 The balance, equity, realized/unrealized split, daily PnL, peak equity and
 drawdown come from `koval.engine.account_state.PlatformAccountState` — the
 same MIT account contract as paper. In this plugin the graph context is bound
-to the broker ledger. Full runtime parity still has the
-[documented engine gaps](execution-validation.md#remaining-engine-011-integration-gaps).
+to the broker ledger through `DeclarativeStrategy.bind_account(provider)`.
+`account_snapshot()` is the public engine reader; the plugin's existing
+`account` attribute and its extra risk diagnostics remain supported. See the
+[paired acceptance scope](execution-validation.md#0111-paired-acceptance).
 
 | Field | Meaning |
 |---|---|

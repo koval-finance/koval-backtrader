@@ -7,7 +7,7 @@ from decimal import Decimal as D
 import numpy as np
 import pytest
 from koval.engine.backtest_engine import EngineRunSpec
-from koval.engine.execution_conformance import IntentionalDifference, compare_execution_results
+from koval.engine.execution_conformance import compare_execution_results
 from koval.engine.execution_proxy import ExecutionLatency, ExecutionProxyConfig
 from koval.engine.fee_evidence import FeeScheduleEvidence
 from koval.engine.funding import FundingRecord, build_funding_series
@@ -140,7 +140,7 @@ def execute(
     return result, events, snapshots
 
 
-def assert_paper_parity(monkeypatch, rows, *, partial_mark_divergence=False, **kwargs):
+def assert_paper_parity(monkeypatch, rows, **kwargs):
     result, events, snapshots = execute(monkeypatch, rows, **kwargs)
     model = result.metrics["execution_model"]["resolved_config"]["execution_model"]
     broker = PaperBroker(
@@ -158,29 +158,7 @@ def assert_paper_parity(monkeypatch, rows, *, partial_mark_divergence=False, **k
             ts_ms=START + index * STEP, open=open_, high=high, low=low, close=close, volume=volume
         )
         paper_fills.extend(fills)
-        partial_exit = fills and fills[-1].kind != "entry" and broker.position is not None
-        if partial_mark_divergence and partial_exit:
-            # Published engine 0.11.0 marks the residual at its exit fill.
-            # Scope the waiver to this bar and still prove the correct close mark.
-            compare_execution_results(
-                {"equity": broker.equity},
-                {"equity": snapshots[index].equity},
-                allowed_differences=(
-                    IntentionalDifference(
-                        path="equity", reason_code="paper_partial_exit_marks_residual_at_fill"
-                    ),
-                ),
-            )
-            position = broker.position
-            signed = position.quantity * (1 if position.side == "buy" else -1)
-            assert snapshots[index].equity == pytest.approx(
-                broker.balance + signed * (close - position.entry_price)
-            )
-            assert broker.equity == pytest.approx(
-                broker.balance + signed * (fills[-1].price - position.entry_price)
-            )
-        else:
-            assert snapshots[index].equity == pytest.approx(broker.equity)
+        assert snapshots[index].equity == pytest.approx(broker.equity)
         assert snapshots[index].balance == pytest.approx(broker.balance)
         if index == 0:
             broker.submit_bracket(
@@ -410,7 +388,7 @@ def test_replacement_normalizes_instrument_ticks(monkeypatch):
 
 
 def test_risk_capped_entries_remain_on_the_venue_quantity_step(monkeypatch):
-    result, _, _ = execute(
+    result, _, _ = assert_paper_parity(
         monkeypatch,
         [QUIET] * 3,
         evidence={"instrument_specs": (instrument(),)},
@@ -430,7 +408,6 @@ def test_lagged_impact_is_disclosed_per_fill(monkeypatch):
         monkeypatch,
         [QUIET] * 3 + [(100, 121, 99, 120, 10)] * 3,
         evidence={"execution_proxy": proxy},
-        partial_mark_divergence=True,
     )
     assert all(
         f["impact_evidence_id"] == "impact-1" for f in result.metrics["execution_costs"]["fills"]
@@ -543,7 +520,7 @@ def test_evidence_fee_overrides_configured_fee_for_affordability(monkeypatch):
 
 def test_risk_clipping_consumes_only_actual_liquidity(monkeypatch):
     proxy = ExecutionProxyConfig(D("0.2"), "carry", ExecutionLatency())
-    result, _, _ = execute(
+    result, _, _ = assert_paper_parity(
         monkeypatch,
         [QUIET, (100, 101, 89, 100, 10), (100, 101, 89, 100, 10)],
         evidence={"execution_proxy": proxy},

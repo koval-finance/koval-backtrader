@@ -189,7 +189,7 @@ Read [execution-model.md](execution-model.md). Legacy execution is fees-only;
 `ohlcv_realistic_v2` adds entry-bar protection and optional archived execution
 evidence, including funding and a liquidity proxy. No profile reconstructs
 an order book or guarantees venue outcomes. Pair profiles with engine 0.11 and
-read the [known integration gaps](execution-validation.md).
+read the [paired acceptance and model limits](execution-validation.md).
 
 ## See also
 

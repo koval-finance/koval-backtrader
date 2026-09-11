@@ -1,6 +1,7 @@
 # Execution model
 
-Version 0.11 runs against published `koval-engine>=0.11.0,<0.12.0`.
+Version 0.11.1 supports `koval-engine>=0.11.0,<0.12.0`; the corrected paired
+acceptance requires engine 0.11.1. Engine 0.11.0 retains its historical limits.
 It simulates one instrument from closed OHLCV bars. Matching historical and
 paper results demonstrates implementation conformance, not equivalent exchange
 fills. See the [verification and review record](execution-validation.md).
@@ -114,12 +115,16 @@ Baseline v1/v2 differential scenarios have no waivers. The old favorable-limit,
 target-update and spot-refusal exceptions are removed. Actual `LiveEngine`
 replay also covers a refused spot short followed by a long and a moved target.
 
-Advanced combinations still have engine-side gaps: partial-exit residual
-valuation, quantity re-quantization after risk sizing, and volume reserved
-before risk clipping. Graph account binding also needs a public runtime hook.
-The exact examples, reason codes and affected comparisons are in
-[execution-validation.md](execution-validation.md#remaining-engine-011-integration-gaps).
-Do not claim general graph or advanced-evidence parity until these are resolved.
+Engine 0.11.1 closes the previously reported residual-mark, risk-rounding,
+shared-volume and graph-account gaps. The advanced comparisons have no active
+waivers. Full-runtime tests compare every AccountSnapshot field, closed-trade
+arithmetic and shared input identities. See the measured scope in
+[execution-validation.md](execution-validation.md#0111-paired-acceptance).
+
+Backtests retain and mark final exposure. Use
+`LiveEngineConfig(end_of_data_policy="mark_at_last_close", ...)` for equivalent
+paper replay endings. The default paper policy still flattens and charges exit
+costs; differing endings must never be presented as an execution defect.
 
 ## Fill prices
 
@@ -257,5 +262,5 @@ results alongside aggregate statistics.
 ## See also
 
 - [results.md](results.md) — result fields and reconciliation.
-- [execution-validation.md](execution-validation.md) — tests, review and known gaps.
+- [execution-validation.md](execution-validation.md) — tests, paired acceptance and historical findings.
 - [execution-research.md](execution-research.md) — primary sources and decisions.

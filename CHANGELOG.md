@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.11.1] - 2026-09-12
+
+### Changed
+
+- Prefer engine 0.11.1's public account snapshot hook. Preserve the declared
+  `koval-engine>=0.11.0,<0.12.0` range and use the narrow graph fallback only
+  with engine 0.11.0, where the public hook is unavailable.
+- Remove the obsolete partial-exit equity waiver after observing the comparator
+  reject it as unused. Risk-capped instrument quantities and shared-liquidity
+  cases now compare independently executed paper and Backtrader results.
+- Add full LiveEngine/Backtrader comparisons of graph account snapshots, trade
+  prices, quantities, costs, terminal equity and input identities for both
+  directions with funding, partial fills, instrument rules, gaps and open endings.
+- Document the cross-package compatibility matrix and engine-first release
+  order so release CI verifies the corrected pair.
+
+Backtest terminal exposure remains marked at the final close. Select the same
+explicit policy for paper replay. No new dependency, execution mode, or
+exchange-fidelity claim is introduced.
+
 ## [0.11.0] - 2026-09-11
 
 ### Added

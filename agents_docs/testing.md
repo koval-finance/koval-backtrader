@@ -73,7 +73,9 @@ fixtures are version-dispatched with no skips. The shared engine comparator
 checks baseline matching; advanced evidence tests also prove funding, partial
 OCO, instrument rounding, actual liquidity accounting, latency and lagged impact.
 Actual LiveEngine replay verifies spot continuation, target updates and stream
-identity. One narrowly scoped engine mark-price waiver must fail when stale.
+identity. No active waiver remains against engine 0.11.1.
+`test_runtime_conformance.py` additionally compares graph account snapshots,
+trade arithmetic and shared identities with an explicit common terminal policy.
 
 The default suite checks any local `dist/` against package source bytes and
 metadata. Rebuild stale artifacts; never relax the gate. Release CI runs the
