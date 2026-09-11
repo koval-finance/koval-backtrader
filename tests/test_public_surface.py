@@ -9,8 +9,10 @@ rather than a habit because a habit cannot fail the build.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -113,6 +115,26 @@ def test_gitignore_does_not_hide_public_repository_automation():
     }
     hidden = [path for path in REQUIRED_PUBLIC_PATHS if path in ignored]
     assert hidden == [], f"public repository automation must not be ignored: {hidden}"
+
+
+def test_repository_tests_win_over_an_installed_tests_package(tmp_path):
+    """Cross-test imports must not depend on namespace-package resolution."""
+    foreign_root = tmp_path / "foreign"
+    foreign_tests = foreign_root / "tests"
+    foreign_tests.mkdir(parents=True)
+    (foreign_tests / "__init__.py").write_text("", encoding="utf-8")
+    env = os.environ | {"PYTHONPATH": str(foreign_root)}
+
+    imported = subprocess.run(
+        [sys.executable, "-c", "import tests.test_runtime_conformance"],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert imported.returncode == 0, imported.stdout + imported.stderr
 
 
 def test_no_module_imports_the_engines_exchange_clients():
