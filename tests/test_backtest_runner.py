@@ -202,8 +202,36 @@ def test_zero_adjustment_fixed_model_preserves_legacy_graph_prices_and_equity():
     fixed = create_engine().run(spec)
     assert fixed.equity_curve == legacy.equity_curve
     for key, value in legacy.metrics.items():
-        if key != "execution_model":
+        # `execution_model` and `run_identity` describe the request, not the
+        # result. Both correctly report a different model version here; every
+        # number the two runs produced still has to be identical.
+        if key not in ("execution_model", "run_identity", "research"):
             assert fixed.metrics[key] == value
+    # "not modelled" and "modelled, and it came to zero" are different claims,
+    # and the research block is required to keep them apart.
+    assert legacy.metrics["research"]["costs"]["price_adjustment"] is None
+    assert fixed.metrics["research"]["costs"]["price_adjustment"] == 0.0
+    assert legacy.metrics["research"]["unavailable"] == {
+        "price_adjustment": "not_modelled_by_legacy_v1"
+    }
+    assert fixed.metrics["research"]["unavailable"] == {}
+    assert fixed.metrics["research"]["sample_size"] == legacy.metrics["research"]["sample_size"]
+    assert fixed.metrics["research"]["exposure"] == legacy.metrics["research"]["exposure"]
+    assert fixed.metrics["research"]["costs"]["commission"] == pytest.approx(
+        legacy.metrics["research"]["costs"]["commission"]
+    )
+    # The identity difference is confined to naming the model, not to the inputs.
+    legacy_identity = dict(legacy.metrics["run_identity"])
+    fixed_identity = dict(fixed.metrics["run_identity"])
+    for key in ("execution_model_version", "execution_identity", "reproducibility"):
+        legacy_identity.pop(key)
+        fixed_identity.pop(key)
+    assert legacy_identity == fixed_identity
+    assert legacy.metrics["run_identity"]["reproducibility"]["reasons"] == [
+        "unversioned_execution_model",
+        "market_identity_absent",
+        "dataset_evidence_absent",
+    ]
     for before, after in zip(legacy.trades, fixed.trades, strict=True):
         for key in ("entry_price", "exit_price", "realized_pnl", "commission", "size"):
             assert after[key] == pytest.approx(before[key])
@@ -234,3 +262,67 @@ def test_runner_accepts_a_two_feed_pair_outside_that_table():
         initial_capital=10_000.0,
     )
     assert isinstance(engine.run(spec), BacktestResult)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"execution_contract_version": 99},
+        {"required_execution_capabilities": ("order_book_queue",)},
+        {"required_execution_capabilities": ("funding",)},
+    ],
+)
+def test_unsupported_execution_contract_is_rejected_before_running(overrides):
+    from koval.engine.backtest_engine import ProtocolVersionError
+
+    with pytest.raises(ProtocolVersionError):
+        create_engine().run(
+            EngineRunSpec(
+                graph=_GRAPH, feeds={"1h": _trending_feed()}, initial_capital=10000.0, **overrides
+            )
+        )
+
+
+def test_trailing_htf_does_not_repeat_the_last_primary_bar():
+    primary = _trending_feed(10)
+    higher = _trending_feed(6)
+    higher[:, 0] = primary[0, 0] + np.arange(6) * 4 * 3_600_000
+    result = create_engine().run(
+        EngineRunSpec(graph=_GRAPH, feeds={"1h": primary, "4h": higher}, initial_capital=10000.0)
+    )
+    assert len(result.equity_curve) == len(primary)
+    assert len({p["timestamp"] for p in result.equity_curve}) == len(primary)
+
+
+def test_v2_rejects_gapped_primary_timestamps():
+    candles = _trending_feed(20)
+    candles[10:, 0] += 3_600_000
+    with pytest.raises(ValueError, match="continuity"):
+        create_engine().run(
+            EngineRunSpec(
+                graph=_GRAPH,
+                feeds={"1h": candles},
+                initial_capital=10000.0,
+                execution_config={
+                    "exchange": "binance",
+                    "exchange_type": "future",
+                    "execution_model": {
+                        "version": "ohlcv_realistic_v2",
+                        "commission_bps": 0.0,
+                        "spread_bps": 0.0,
+                        "slippage_bps": 0.0,
+                    },
+                },
+            )
+        )
+
+
+def test_third_timeframe_is_rejected_instead_of_silently_ignored():
+    with pytest.raises(ValueError, match="two timeframes"):
+        create_engine().run(
+            EngineRunSpec(
+                graph=_GRAPH,
+                feeds={tf: _trending_feed() for tf in ("1h", "4h", "1d")},
+                initial_capital=10000.0,
+            )
+        )

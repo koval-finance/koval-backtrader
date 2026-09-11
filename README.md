@@ -14,7 +14,7 @@ through Backtrader's `Cerebro` and hands back metrics, closed trades, an
 equity curve, and — if you ask for it — the full stream of decisions that
 produced them. No Backtrader object crosses back into your code.
 
-**Status:** 0.10.x. The public API may change before 1.0.
+**Status:** 0.11.x. Requires koval-engine 0.11.x. The public API may change before 1.0.
 
 Execution costs are an explicit, versioned model rather than a hidden default.
 What it does and does not simulate is stated in full in the
@@ -133,11 +133,17 @@ is rejected with `ORDER_REJECTED` when `notional / leverage + commission`
 exceeds available equity. Store `result.metrics["execution_model"]` with the
 graph and candles to preserve resolved assumptions and software identity.
 
-`ohlcv_fixed_v1` implements the **Koval execution contract v1**, which the MIT
-engine's paper broker implements independently. The engine ships the golden
-fixtures both must reproduce; `tests/test_parity_fixtures.py` runs them through
-this plugin, and `tests/test_engine_signal_parity.py` asserts the two runtimes
-make the same decisions on the same candles.
+For entry-bar protection, select `ohlcv_realistic_v2` and pair it with
+engine `paper_ohlcv_realistic_v2`. Optional normalized engine evidence adds
+funding, maker/taker fee assumptions, instrument constraints, liquidation and
+an OHLCV partial-fill/latency/impact proxy. The
+[configuration contract](https://github.com/koval-finance/koval-backtrader/blob/main/docs/execution-model.md)
+includes canonical markets, replayable evidence and capability negotiation.
+
+Every published engine fixture runs. Baseline v1/v2 scenarios agree without
+waivers; advanced combinations have narrowly documented engine-side gaps in
+[the 0.11 review](https://github.com/koval-finance/koval-backtrader/blob/main/docs/execution-validation.md).
+No backtest is certified to reproduce real venue outcomes.
 
 ## What you get back
 
@@ -145,7 +151,7 @@ make the same decisions on the same candles.
 
 | | |
 |---|---|
-| `metrics` | Performance metrics, `execution_model` metadata, and `execution_costs` for `ohlcv_fixed_v1` |
+| `metrics` | Performance metrics, `execution_model` metadata, `run_identity` (input fingerprints and a reproducibility grade), `research` (expectancy, exposure, MAE/MFE, cost share), and `execution_costs` for both costed profiles |
 | `trades` | one dict per closed trade: prices, times, size, PnL, commission, exit reason, and whatever the strategy recorded about why it entered |
 | `equity_curve` | account value at every bar |
 
@@ -156,33 +162,18 @@ shared metric definitions do not guarantee equal results. Field definitions are 
 
 ## What it does not model
 
-A backtest is a claim about what would have happened. Here is what this one
-leaves out:
+- Historical execution evidence is optional. Missing funding, fees, instrument
+  constraints or liquidity inputs remain explicitly unavailable or assumed.
+- Depth, queue priority, actual bid/ask, venue downtime, cross-asset fee
+  conversion, portfolio margin and inverse/delivery contracts are unsupported.
+- One instrument, one position, at most two timeframes. No hedging or portfolio.
+- Market identity is optional for replay compatibility; provide it to enforce
+  spot constraints and make a run identifiable across runtimes.
+- This plugin is offline. Paper and sandbox execution belong to koval-engine.
+  No credentials or venue order connection are introduced here.
 
-- **Legacy execution is fees-only.** `ohlcv_fixed_v1` adds fixed spread and
-  slippage assumptions inside the broker, plus fill-level cost attribution.
-  Market/stop synthetic cost prices may lie outside the observed candle;
-  limits retain their price bound. Funding, actual maker/taker classification,
-  partial fills, liquidity, impact and liquidation remain unavailable.
-- **No exchange filters.** Order sizes are not quantized to a venue's lot
-  size, price filters and minimum notionals are not applied, and no order is
-  rejected for breaching them. A backtest can trade a quantity Binance or
-  WhiteBIT would round or refuse.
-- **`exchange_type` is provenance, not a constraint.** A `spot` run is still
-  allowed to open short positions and to use `leverage` above 1. The label
-  records which fee assumption was used; it does not restrict the simulation
-  to what that market permits.
-- **One position at a time, one instrument.** No pyramiding, no hedging, no
-  portfolio.
-- **No real-money trading.** This package replays historical candles through
-  a simulated broker. It holds no credentials and opens no venue connection.
-- **No live execution.** Paper and exchange-sandbox trading live in
-  koval-engine and do not use this package.
-
-Neither model is an order-book simulation or a guaranteed performance bound.
-The full accounting is in
-[docs/execution-model.md](https://github.com/koval-finance/koval-backtrader/blob/main/docs/execution-model.md),
-and it is the page to read before trusting a number.
+The [execution model](https://github.com/koval-finance/koval-backtrader/blob/main/docs/execution-model.md)
+states each approximation and the evidence needed to enable it.
 
 ## How it fits together
 
@@ -228,7 +219,7 @@ before it can execute.
 
 ## Compatibility
 
-Requires Python 3.11+ and `koval-engine>=0.9.0,<0.10.0`. The upper bound
+Requires Python 3.11+ and `koval-engine>=0.11.0,<0.12.0`. The upper bound
 tracks the engine's backtest protocol version; when the engine raises it,
 this package needs a release rather than a looser pin.
 

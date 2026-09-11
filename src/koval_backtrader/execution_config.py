@@ -5,12 +5,28 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from koval.engine.execution_settings import resolve_execution_settings
 
+from koval_backtrader.execution_evidence import (
+    EVIDENCE_KEYS,
+    ExecutionEvidence,
+    resolve_execution_evidence,
+)
+from koval_backtrader.market_identity import (
+    MarketIdentity,
+    market_constraints,
+    resolve_market_identity,
+    validate_against_labels,
+    validate_against_model,
+)
+from koval_backtrader.run_identity import EvidenceIdentity, resolve_evidence_identity
+
 LEGACY_VERSION = "legacy_v1"
 FIXED_VERSION = "ohlcv_fixed_v1"
+REALISTIC_VERSION = "ohlcv_realistic_v2"
+COSTED_VERSIONS = (FIXED_VERSION, REALISTIC_VERSION)
 
 
 MIN_LEVERAGE = 1.0
@@ -26,20 +42,35 @@ class ExecutionModel:
     spread_bps: float = 0.0
     slippage_bps: float = 0.0
     leverage: float = 1.0
+    market: MarketIdentity | None = None
+    evidence: EvidenceIdentity | None = None
+    execution_evidence: ExecutionEvidence = field(default_factory=ExecutionEvidence)
+
+    @property
+    def market_constraints(self) -> str:
+        return market_constraints(self.market)
 
     def as_config(self) -> dict:
         model = {"version": self.version, "commission_bps": self.commission_bps}
-        if self.version == FIXED_VERSION:
+        if self.version in COSTED_VERSIONS:
             model.update(
                 spread_bps=self.spread_bps,
                 slippage_bps=self.slippage_bps,
                 leverage=self.leverage,
             )
-        return {
+        config = {
             "exchange": self.exchange,
             "exchange_type": self.exchange_type,
             "execution_model": model,
         }
+        # Optional blocks are omitted rather than emitted as null, so a
+        # resolved config can always be replayed verbatim.
+        if self.market is not None:
+            config["market"] = self.market.as_dict()
+        if self.evidence is not None:
+            config["evidence"] = self.evidence.as_dict()
+        config.update(self.execution_evidence.as_config())
+        return config
 
 
 def _cost_bps(model: Mapping, name: str) -> float:
@@ -141,8 +172,16 @@ def resolve_execution_model(config: Mapping | None) -> ExecutionModel:
             settings.broker_commission_bps,
         )
 
-    if set(config) != {"exchange", "exchange_type", "execution_model"}:
-        raise ValueError("execution_config requires only exchange, exchange_type, execution_model")
+    # Market/provenance are optional for old requests. Execution evidence is
+    # opt-in v2 input and must never silently alter a fixed-v1 replay.
+    required = {"exchange", "exchange_type", "execution_model"}
+    optional_blocks = {"market", "evidence"} | EVIDENCE_KEYS
+    if not required <= set(config) <= required | optional_blocks:
+        raise ValueError(
+            "execution_config requires only exchange, exchange_type, execution_model "
+            "and optionally market, evidence, funding, fee_schedule, "
+            "instrument_specs, mark_prices, execution_proxy"
+        )
     for name in ("exchange", "exchange_type"):
         if not isinstance(config[name], str) or not config[name].strip():
             raise ValueError(f"execution_config.{name} must be a non-empty string")
@@ -150,13 +189,15 @@ def resolve_execution_model(config: Mapping | None) -> ExecutionModel:
     if not isinstance(model, Mapping):
         raise ValueError("execution_model must be a mapping")
     version = model.get("version")
-    if version not in (LEGACY_VERSION, FIXED_VERSION):
-        raise ValueError("execution_model.version must be legacy_v1 or ohlcv_fixed_v1")
+    if version not in (LEGACY_VERSION, *COSTED_VERSIONS):
+        raise ValueError(
+            "execution_model.version must be legacy_v1, ohlcv_fixed_v1 or ohlcv_realistic_v2"
+        )
     if config["exchange_type"] not in ("spot", "future", "futures", "usdm", "usd_m", "unspecified"):
         raise ValueError("execution_config.exchange_type is unsupported")
     expected = {"version", "commission_bps"}
     optional: set[str] = set()
-    if version == FIXED_VERSION:
+    if version in COSTED_VERSIONS:
         expected |= {"spread_bps", "slippage_bps"}
         optional = {"leverage"}
         if config["exchange_type"] not in ("spot", "future"):
@@ -169,7 +210,21 @@ def resolve_execution_model(config: Mapping | None) -> ExecutionModel:
     costs = {key: _cost_bps(model, key) for key in expected - {"version"}}
     if costs.get("spread_bps", 0) / 2 + costs.get("slippage_bps", 0) >= 10_000:
         raise ValueError("execution_model half spread plus slippage must be below 10000 bps")
-    leverage = _leverage(model) if version == FIXED_VERSION else MIN_LEVERAGE
+    leverage = _leverage(model) if version in COSTED_VERSIONS else MIN_LEVERAGE
+    market = resolve_market_identity(config.get("market"))
+    validate_against_labels(
+        market, exchange=config["exchange"], exchange_type=config["exchange_type"]
+    )
+    validate_against_model(market, leverage=leverage)
     return ExecutionModel(
-        version, config["exchange"], config["exchange_type"], leverage=leverage, **costs
+        version,
+        config["exchange"],
+        config["exchange_type"],
+        leverage=leverage,
+        market=market,
+        evidence=resolve_evidence_identity(config.get("evidence")),
+        execution_evidence=resolve_execution_evidence(
+            config, realistic=version == REALISTIC_VERSION, market=market
+        ),
+        **costs,
     )

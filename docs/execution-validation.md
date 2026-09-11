@@ -1,273 +1,120 @@
-# Execution-cost validation record
+# Execution validation and 0.11 release review
 
-This record accompanies the [model specification](execution-model.md) and
-[research/decision record](execution-research.md). It covers the working-tree
-milestone prepared on 2026-09-05, without a commit or release.
+Prepared 2026-09-11 against **published PyPI koval-engine 0.11.0** and
+Backtrader 1.9.78.123. The engine's
+[Runtime and identity contract — 0.11](https://github.com/koval-finance/koval-engine/blob/v0.11.0/agents_docs/runtime_contract.md)
+was read before implementing the plugin changes. The source of truth for
+observable rules is [execution-model.md](execution-model.md).
 
-## Scope and compatibility
+Earlier notes attributing 694-line versus 1656-line paper brokers to the
+published 0.10.0 release confused a local artifact with the release. Those
+claims and the associated stale exemptions are superseded by this record.
 
-Implemented `ohlcv_fixed_v1`: deterministic adverse half-spread and slippage,
-uniform explicit fees on actual fill notional, limit caps, cost attribution,
-resolved replay metadata, UTC v1 timestamps and account reconciliation.
-Legacy valid fill/fee configurations preserve numeric behavior and legacy
-trade fields; metadata is additive. Invalid/unknown old settings now fail
-instead of silently defaulting. Legacy analyzer funding injection remains a
-compatibility hook, not an account-level funding implementation.
+## Verification matrix
 
-Funding, maker/taker classification, partial fills, liquidity limits, adaptive
-impact, extra latency, exchange filters, margin and liquidation are deferred
-with input requirements and acceptance criteria in the decision record. No
-funding debit/credit or partial-fill implementation is claimed. Tests prove
-these unsupported requests are rejected and missing funding is disclosed,
-not that unavailable features have been simulated.
-
-## Failing-to-passing evidence
-
-The initial `./scripts/verify.sh` passed **106 tests**. Fourteen new baseline
-characterization cases then passed against the unchanged implementation:
-next open, delayed bracket protection, stop-first ambiguity, long/short limit
-and stop gaps/touches, unlimited volume and old fee/PnL semantics.
-
-Subsequent observed red runs, before their corresponding implementation:
-
-| Run | Observed result | Cause / resolution |
-|---|---|---|
-| Initial accepted behavior | 79 failed, 14 passed | Unadjusted prices, absent cost/metadata fields, ignored invalid configs; added parser, broker and audit |
-| Input and audit robustness | 25 failed, 93 passed | Bad OHLCV/capital/order arithmetic, mutable callback metadata, silently ignored old cost fields; added validation and payload copying |
-| Source identity and funding audit | 8 failed, 127 passed | Missing source fingerprint, unsupported old setting values and cosmetic funding accepted in v1; added fingerprint and rejection |
-| UTC/replay review | 5 failed, 130 deselected | Naive fill time shifted by host timezone; unsupported or oversized legacy snapshots could not replay; corrected UTC and parser bounds |
-
-The first green pass also exposed a floating-point accounting issue:
-subtracting closed PnL-derived commission from total commission left a tiny
-nonzero "open commission" while flat. Open commission now comes directly from
-fills belonging to the open trade; v1 commission uses executed fee amounts.
-
-The new real-graph multi-trade fixture initially generated just one crossover;
-it was replaced with a deterministic oscillating series. This was a fixture
-correction, not a production failure or weakened assertion. It now proves
-multiple trades, stable IDs, repeated results/events and multi-timeframe runs.
-
-## Coverage
-
-- [`test_execution_realism.py`](../tests/test_execution_realism.py): public
-  runner probes, long/short entry/exit costs, limit touches/improvement/caps,
-  stop gaps, OCO ambiguity, component allocation, zero-cost mode, unavailable
-  funding (positive/negative/zero synthetic records rejected), open-position
-  costs, cash rejections, metadata replay, offline execution, input validation,
-  source identity and UTC timestamps.
-- [`test_execution_broker.py`](../tests/test_execution_broker.py): direct market
-  exits for both position directions, with broker-value checks.
-- [`test_backtest_runner.py`](../tests/test_backtest_runner.py): real graphs,
-  multiple trades/timeframes, deterministic event/result equality and zero-cost
-  compatibility. [`test_bt_analyzers.py`](../tests/test_bt_analyzers.py): both
-  signs of analyzer-only funding rejected under v1; old hook preserved.
-- Existing entry-point, SPDX/license boundary, OCO, adapter, packaging and
-  documentation guards are retained unchanged. Documentation guard failures
-  are resolved in the documents, not by editing guard expectations.
-
-## Worked reconciliation
-
-Input: capital 10,000; two-unit long; reference entry 100; stop 90; next exit
-bar opens at 85. Costs: full spread 20 bps, slippage 10 bps, commission 4 bps.
-
-| Component | Entry | Exit | Total |
-|---|---|---|---|
-| Matched reference price | 100 | 85 | — |
-| Actual fill price | 100.20 | 84.83 | — |
-| Spread cost | 0.20 | 0.17 | 0.37 |
-| Slippage cost | 0.20 | 0.17 | 0.37 |
-| Commission | 0.080160 | 0.067864 | 0.148024 |
-| Funding booked | 0 | 0 | 0, unavailable |
-
-Reference PnL is `2 * (85 - 100) = -30`. Actual-price gross PnL is
-`2 * (84.83 - 100.20) = -30.74`. Net PnL is `-30.888024`.
-Broker capital and the final equity point both equal **9969.111976**:
-
-```
-10000 - 30 - 0.37 - 0.37 - 0.148024 = 9969.111976
-10000 + (-30.888024)                = 9969.111976
-```
-
-The gap loss is already in reference PnL; it is not counted again as slippage.
-The embedded 0.74 cost must not be subtracted from actual-price PnL a second
-time. Open-position tests separately reconcile unrealized PnL and entry fees.
-
-## Verification and review
-
-`./scripts/verify.sh` completed with exit **0**: lint passed, **60 files**
-formatted, and **280 tests passed** with one skip. `git diff --check` also
-passed. No guard test was modified or weakened.
-
-The review covered tracked diffs and every new source, test and documentation
-file, followed by the broader
-[readiness review](#platform-readiness-review) recorded below. Both the
-look-ahead and the timestamp defect that review found are now closed, each
-with the regression test named in its section. Earlier corrections included
-UTC v1 conversion, replayable legacy bounds, exact open-commission
-attribution, payload isolation, explicit unavailable funding, and stale
-performance-bound claims.
-
-Known constraints remain explicit: synthetic prices may exceed candle ranges;
-limit caps can reduce assumed costs to zero; filled quantity has unlimited
-liquidity; uniform fees cannot identify maker behavior; historical funding and
-venue margin/filters are unavailable; brackets wait one bar after entry;
-intrabar ordering is a queue assumption; old timezone-sensitive legacy epoch
-conversion remains for reproduction. This is not a sandbox-promotion approval.
-
-No sibling repository was edited, no runtime dependency was added, and no Git
-write or publication was performed. Human-managed releases must precede
-application pin updates. Suggested commit message:
-`Add versioned deterministic OHLCV execution costs`.
-
-## Platform readiness review
-
-Reviewed on 2026-09-05 against the complete working tree, then re-reviewed
-before the 0.10.0 release. The original verdict was **changes required before
-claiming trustworthy multi-timeframe execution**. Both defects it raised are
-now closed, and each section below records what closed it and which test now
-guards it.
-
-Engine-side work is tracked in koval-engine's
-[public plan](https://github.com/koval-finance/koval-engine/blob/main/agents_docs/execution_contract_plan.md).
-How an application adopts the model is outside this repository: the plugin's
-contract is `EngineRunSpec` in and `BacktestResult` out, and anything a
-consumer must do to carry a version through its own request and storage layers
-belongs in that consumer's own documentation.
-
-The plugin seam itself is verified by `tests/test_entry_point.py`:
-`load_backtest_engine()` resolves
-`koval_backtrader.backtest_runner.BacktraderBacktestEngine` from the entry-point
-group, so installing the distribution is the whole configuration story.
-
-### P1: higher-timeframe candles expose future information
-
-Owner: koval-backtrader. Relevant code:
-[`backtest_runner.py`](../src/koval_backtrader/backtest_runner.py), feed creation;
-[`bt_adapter.py`](../src/koval_backtrader/bt_adapter.py), `_inject_state()`.
-
-The feed converter uses the supplied timestamps unchanged, and HTF injection
-includes `htf.close.get(ago=0, size=m)`. Binance identifies futures klines by
-their opening time, as documented in its
-[official connector source](https://github.com/binance/binance-futures-connector-python/blob/main/binance/um_futures/market.py)
-(accessed 2026-09-05). The engine's `BinanceAdapter._rows_to_ndarray()` retains
-that time. A higher-timeframe candle can therefore be current in Backtrader
-before its final OHLCV would have been available to the strategy.
-
-An offline public-runner probe reproduced this with eight hourly bars
-beginning at `1704067200000`, and four-hour bars aggregated from those same
-rows. The first three hourly candles were identical, around price 100. Only
-the fourth candle's future close and corresponding high/low changed, which
-also changed the unfinished HTF aggregate:
-
-| First four-hour final close | HTF closes seen in the first hourly callback | HTF closes seen in the second hourly callback |
-|---|---|---|
-| 50 | `[50]` | `[50]` |
-| 500 | `[500]` | `[500]` |
-
-The first hourly decision has access to a four-hour result that will not be
-available until hour four. A probe entering when the HTF close exceeded 200
-produced no early entry in the 50 case, but filled an entry on hourly bar two
-in the 500 case, before the changed hourly candle was observable. This is a
-look-ahead defect in both legacy and fixed execution, not an execution-cost
-approximation. Existing HTF tests verify presence of arrays, and the existing
-future-bar test covers a single feed; neither checks HTF availability.
-
-Required correction: define candle opening time separately from information
-availability, and inject only HTF bars closed by the primary decision time.
-Add a test that changes unfinished HTF OHLCV and proves all earlier strategy
-inputs and decisions remain unchanged. Cover the exact close boundary,
-history windows, missing bars and warmup. State how corrected timing is
-versioned so historical legacy outputs remain identifiable.
-
-**Closed in 0.10.0.** `_inject_state()` injects an HTF bar only when
-`htf_open + htf_duration <= primary_open + primary_duration`, and a second feed
-without declared timeframe durations now fails loudly rather than guessing.
-The rule applies to both execution models, because the previous behavior was a
-defect rather than a documented semantic; the changelog says so and the
-metadata carries `htf_availability_legacy_defect_fixed: true`, so a
-recomputed legacy result stays identifiable. Regression coverage:
-`tests/test_bt_adapter_htf.py::test_htf_bar_is_visible_only_after_it_closes`
-(exact close boundary),
-`::test_mutating_an_unfinished_htf_bar_does_not_change_earlier_inputs`
-(the reproducer above, inverted into an assertion) and
-`::test_a_second_feed_without_declared_timeframes_fails_loudly`.
-
-### Consumer integration is out of scope for this repository
-
-The original review also raised two findings against the application that
-consumes this plugin: its request layer did not carry the new
-`execution_model` through to `EngineRunSpec`, and its trade records dropped
-the per-trade execution attribution this package returns. Both are consumer
-concerns, not plugin defects, and they are tracked wherever that consumer is
-developed.
-
-They are recorded here only as a warning that applies to any consumer:
-**installing this plugin does not by itself activate `ohlcv_fixed_v1`.** A
-caller that does not pass an `execution_config` gets `legacy_v1`, and a caller
-that builds its own configuration dictionary must forward `exchange`,
-`exchange_type` and `execution_model` verbatim. If per-trade attribution
-matters, persist `execution_costs` from each trade and
-`metrics["execution_model"]` from the run; a whitelist that copies only the
-legacy trade fields will silently drop them.
-
-### P2: event and ledger timestamps can disagree by one millisecond
-
-Owner: koval-backtrader. Relevant code:
-[`bt_adapter.py`](../src/koval_backtrader/bt_adapter.py), `_timestamp_ms()`, and
-[`execution_broker.py`](../src/koval_backtrader/execution_broker.py), `_record_fill()`.
-
-The adapter truncates Backtrader's floating-point datetime to milliseconds;
-the ledger rounds it. The input validator accepts integer millisecond times,
-including those that do not lie exactly on a second. A public-runner probe
-with hourly bars starting at `1704067200002` yielded:
-
-| Representation of the same entry fill | Timestamp |
+| Area | Evidence |
 |---|---|
-| Input candle | `1704070800002` |
-| Fill ledger | `1704070800002` |
-| `ORDER_FILLED` event | `1704070800001` |
+| Discovery and GPL boundary | `test_entry_point.py`, `test_package_metadata.py`, `test_license_headers.py`, `test_public_surface.py` |
+| Every published fixture, dispatched by version | `test_parity_fixtures.py`; includes v2 ambiguity and spot rejection, no fixture skipped |
+| Independent v1/v2 matching and account state | `test_paper_parity.py`; hand-written cases and 120 deterministic generated cases per profile, including market/limit/stop entries |
+| Actual LiveEngine integration | `test_engine_signal_parity.py`; real replay, spot rejection followed by a long, dynamic target, identical primary stream hashes |
+| Graph account and constant-time totals | `test_execution_account.py`; real GraphExecutor context uses actual prices/fees, complete AccountSnapshot fields, no historical ledger iteration during snapshots |
+| Funding and evidence fees | `test_realistic_evidence.py`; both sides/rate signs, boundary order, coverage failures, maker/taker assumptions, evidence-driven affordability |
+| Instruments and liquidation | Same file; tick/step normalization, replacement, risk caps, mark coverage, liquidation before protection, event/ledger reconciliation |
+| Partial lifecycle, impact and latency | Same file; carry/cancel, cumulative quantities and fees, partial OCO, one volume budget, lagged calibration, stable IDs, submission delay |
+| Exact inputs and replay | `test_run_identity.py`, JSON evidence round-trip in `test_realistic_evidence.py` |
+| Metrics and open positions | `test_research_metrics.py`, weighted closed-trade attribution and two independent reconciliation equations |
+| Artifact identity and release | `test_dist_artifacts.py`, `test_release_workflow.py`, `test_sdist_contents.py` |
 
-Required correction: use one consistent v1 millisecond conversion for
-strategy state, events and ledger records. Add failing tests with nonzero
-millisecond offsets, including a close near a time boundary. Keep any legacy
-compatibility behavior explicit. UTC attachment alone does not fix rounding.
+The release gate is `./scripts/verify.sh`: lint, formatting and the complete
+suite. Build wheel and sdist, run `scripts/check_dist.py --require-artifacts`,
+then `twine check --strict dist/*`. The default suite checks any local dist
+artifacts too; rebuild them after changing package source. Do not install a
+stale local artifact into another repository to measure parity.
 
-**Closed in 0.10.0.** `time_conversion.utc_ms` / `num2utc_ms` is the one
-conversion; the adapter, the execution broker and the trade-list analyzer all
-use it under `ohlcv_fixed_v1`, and legacy keeps the truncating conversion
-explicitly, in a commented branch. Regression coverage:
-`tests/test_execution_realism.py::test_v1_event_ledger_and_strategy_timestamps_agree_at_millisecond_offsets`,
-which runs the `1704067200002` probe above and asserts the injected state, the
-`ORDER_FILLED` event and the fill ledger all report `1704070800002`.
+## Release verification
 
-### Release and consumer acceptance
+Validated locally on Python 3.13.5 with koval-engine 0.11.0,
+Backtrader 1.9.78.123, NumPy 2.5.3 and pandas 3.0.5:
 
-The gate passed **280 tests**, lint and formatting, with both defects closed
-under test-first changes and no guard weakened.
+- `./scripts/verify.sh`: **787 passed**, lint and formatting passed.
+- Wheel and sdist built successfully; package-byte and version-metadata checks
+  passed for both; strict Twine validation passed.
+- Fresh virtual environment outside the checkout: installed the wheel and
+  published engine through pip, verified the `site-packages` import path and
+  `load_backtest_engine()` discovery, and passed `pip check`.
+- **59 tests passed through the installed wheel**: all public parity fixtures,
+  entry-point checks, advanced evidence cases and actual LiveEngine integration.
+- `git diff --check` passed. Commit, push, tag and publication are human-owned.
 
-A caller that wants to explain an old run later must keep the inputs, not just
-the outputs. Candles should be stored as immutable bytes, or as a durable
-dataset reference with a verified content hash, alongside the graph and the
-resolved `metrics["execution_model"]`. Reloading candles by exchange, symbol,
-timeframe and date range does not bind a stored result to the bytes that
-produced it: a cache refill or an upstream source correction can then change
-the evidence behind a result that has already been reported.
+The release workflow additionally runs its Python 3.11/3.12/3.13 matrix after
+the owner pushes a tag. That remote run is not claimed as completed here.
 
-Funding, maker/taker classification, partial fills, market impact and
-liquidation remain the explicit limitations listed earlier. Their absence
-does not invalidate the arithmetic of an honestly disclosed fixed-cost
-model.
-Paper/sandbox promotion still needs the separate parity and drift checks
-specified in the [research record](execution-research.md#staged-follow-up-and-acceptance-criteria).
+## Review findings corrected in this repository
 
-## Files changed
+The implementation was reviewed after the initial changes and exercised with
+additional failing regressions. Corrections include:
 
-| Area | Files |
+- Actual broker ledger binding, including the graph executor's account, instead
+  of a backtest-only attribute the graph did not read. Fees no longer create an
+  artificial pre-fee equity peak in costed account snapshots.
+- Atomic protective validation and instrument normalization, preserving targets
+  during stop replacement and protecting partial entry remainders.
+- Weighted partial entry/exit accounting, distinct deterministic order IDs,
+  liquidation fees in closed events, and an auditable session account ledger.
+- Funding settlement before orders, quote-fee validation, evidence fee precedence
+  in affordability and explicit refusal of missing mark coverage even when flat.
+- Re-quantizing entry quantity after risk/volume caps and charging liquidity only
+  for actual fills. Favorable tick rounding no longer breaks reconciliation.
+- Floating-point residuals in stepped partial exits no longer strand rounding
+  dust; non-quote collateral is refused by linear accounting.
+- Primary-clock deduplication and trimming of trailing HTF data. Three feeds are
+  rejected because only one primary and one HTF can reach the strategy.
+- Separate all-fill totals from closed-trade cost ratios; do not call OHLC
+  excursion diagnostics lower bounds or caller-provided identities certification.
+- Distribution byte/metadata checks before upload. The newly added guard was
+  observed rejecting the pre-existing stale local 0.11.0 artifacts.
+
+## Remaining engine 0.11 integration gaps
+
+These are limits on cross-runtime conformance, not instructions to change
+engine source from this repository. Keep the plugin's financially consistent
+behavior and use the following cases when preparing the next engine patch.
+
+| Reason code | Reproduction and required engine behavior |
 |---|---|
-| New model code | `src/koval_backtrader/execution_config.py`, `execution_broker.py`, `execution_audit.py`, `time_conversion.py` |
-| Wiring and results | `src/koval_backtrader/backtest_runner.py`, `bt_adapter.py`, `bt_analyzers.py` |
-| New tests | `tests/test_execution_realism.py`, `tests/test_execution_broker.py`, `tests/test_engine_signal_parity.py`, `tests/test_parity_fixtures.py` |
-| Extended tests | `tests/test_backtest_runner.py`, `tests/test_bt_analyzers.py`, `tests/test_bt_adapter.py`, `tests/test_bt_adapter_htf.py`, `tests/test_state_injection_arrays.py`, `tests/test_public_surface.py` |
-| New records | `docs/execution-research.md`, `docs/execution-validation.md`, `docs/execution-plan.md` |
-| User documentation | `README.md`, `docs/README.md`, `docs/architecture.md`, `docs/execution-model.md`, `docs/results.md`, `docs/troubleshooting.md`, `docs/getting-started.md` |
-| Agent documentation | `AGENTS.md`, `agents_docs/README.md`, `agents_docs/architecture.md`, `agents_docs/invariants.md`, `agents_docs/testing.md`, `agents_docs/release_process.md` |
+| `paper_partial_exit_marks_residual_at_fill` | `test_lagged_impact_is_disclosed_per_fill`: entry quantities 1 and 0.9880551136809625 around 100.0315; first target exit 1 at 119.96205266807799 on a bar closing 120. Plugin marks remaining exposure at 120 (equity 10039.660474288836); paper marks it at the exit price (10039.622980233482). Fills and final flat equity match. Mark residual exposure at bar close before the next decision. |
+| `paper_risk_quantity_not_requantized` | `test_risk_capped_entries_remain_on_the_venue_quantity_step`: requested 2 units, entry 100, stop 90, step 0.1, commission 4 bps, slippage 10 bps. Engine risk sizing produces 1.9481776940667475 after normalizing the order; plugin floors the final quantity to 1.9. Reapply the venue step/minima after every sizing cap. |
+| `paper_reserves_unfilled_liquidity` | `test_risk_clipping_consumes_only_actual_liquidity`: 2-unit shared bar budget, requested entry 2, commission 4 bps and a stop-touch entry bar. Risk sizing reduces the entry. Plugin makes the remaining budget available to the protective exit that bar; engine consumes the requested allocation first and withholds that liquidity. Debit only actual fills. |
+| `graph_account_not_bound_to_runtime` | Engine `GraphStrategy._ctx()` reads its private PlatformAccountState, while LiveEngine maintains another broker-backed account. `_on_open()` still forwards the requested setup to the graph hook. Plugin's `strategy_account.py` binds graph reads to actual fills. Engine needs a public authoritative account binding hook, with graph-context tests for fees, funding, partial quantities and gaps. |
+| `terminal_policy_differs` | Backtest retains and marks final exposure; LiveEngine finalization closes it and charges applicable exit costs. Compare pre-finalization snapshots, or choose an explicitly agreed terminal policy before comparing totals. |
+
+Only the specific partial-exit bar equity path has a used, reason-coded waiver
+in the advanced differential harness. That waiver fails when it becomes stale;
+fill prices, quantities, fees, balance and terminal flat equity still match.
+The quantity and liquidity regressions assert the plugin's corrected behavior;
+they are not evidence that those combinations currently agree with engine.
+Baseline `test_paper_parity.py` has no active waivers.
+
+Graph-dependent account decisions, instrument-plus-risk sizing and costed
+partial execution must not be advertised as generally interchangeable with
+engine 0.11.0 paper results. Also verify LiveEngine's gap-containment checks when
+expanding full-runtime tests beyond the PaperBroker fixtures.
+
+## Evidence and model limits
+
+The fee liquidity role is a bar-model assumption: a resting entry limit is
+classified maker, with other fills taker. Current venue snapshots do not become
+historical evidence by assigning them a backtest date. Cross-currency fee
+conversion and complete historical venue filters are not implemented.
+
+The instrument contract represents a subset of exchange rules. Liquidation is
+single-position linear cross-margin using archived marks and maintenance tiers,
+not portfolio, isolated, inverse or delivery margin. Cancellation/replacement
+latency is refused when nonzero. Funding coverage on an empty normalized series
+remains an upstream caller assertion; the archive must be retained separately.
+
+A calibrated volume/impact proxy cannot establish queue priority or observed
+bid/ask. No venue credentials, orders, application changes or release publication
+are part of this work. A successful offline gate is not a promotion approval
+for an application's live or sandbox trading tier.

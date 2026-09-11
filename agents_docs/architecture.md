@@ -65,11 +65,10 @@ The analyzer retains the legacy net-of-commission `gross_realized_pnl` alias;
 v1 adds precise gross-price/net-before-funding fields and rejects cosmetic
 funding adjustments. See [../docs/results.md](../docs/results.md).
 
-Funding, fee liquidity roles, partial fills, adaptive impact, extra latency,
-historical exchange filters and liquidation are explicitly unavailable. The
-[decision record](../docs/execution-research.md) assigns every follow-up an
-owner, required data and acceptance criteria. Never attach a volume filler
-without redesigning partial-entry protection and OCO cancellation first.
+Those v1 limits remain explicit. V2 adds normalized execution evidence and
+partial lifecycle support through the modules below. Never enable unsupported
+evidence by merely relaxing a parser; verify matching, cashflow and OCO semantics
+and update [the model contract](../docs/execution-model.md).
 
 ### `bt_adapter.py` — the strategy bridge
 
@@ -138,6 +137,21 @@ EngineRunSpec
 Drawdown and execution auditing are computed here; scalar trade metrics use
 the engine's shared calculations. Paper still has different fill timing and
 protection behavior; shared metric formulas do not establish execution parity.
+
+## Version 0.11 execution modules
+
+`realistic_broker.py` independently matches v2 orders and resizes partial OCO
+protection. `evidence_execution.py` mutates an incremental account ledger from
+funding, fills and fees. `execution_evidence.py` validates public engine evidence
+and produces JSON replay configuration. `strategy_account.py` binds the graph's
+private 0.11 account reader to broker-authoritative snapshots; no strategy or
+analyzer may book those cashflows a second time.
+
+The runner negotiates capabilities, enforces v2 aligned contiguous data, refuses
+more than two timeframes and prevents trailing HTF bars from replaying a primary
+bar. Account snapshots cost O(1) in ledger length; the full ledger is exported
+at session end. Known engine gaps are in
+[../docs/execution-validation.md](../docs/execution-validation.md).
 
 ## Update this file when
 

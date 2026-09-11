@@ -28,6 +28,7 @@ def test_release_build_runs_all_quality_gates_before_artifact_upload():
         "ruff format --check .",
         "pytest -q",
         "python -m build",
+        "python scripts/check_dist.py --require-artifacts",
         "twine check --strict dist/*",
     )
     missing = [command for command in required_before_upload if command not in workflow[:upload]]

@@ -29,7 +29,7 @@ Per bar, in this order:
 | `go_long()` / `go_short()` | Once the filters pass | `TradeSetup` |
 | `should_cancel_entry()` | Every bar an entry order is still unfilled | `bool` |
 | `on_open_position(trade_id, setup)` | The bar the position opens | — |
-| `on_sl_update(trade_id)` | Every bar with a position and a live stop, except the entry-fill bar | new stop price or `None` |
+| `on_sl_update(trade_id)` | Every bar with a position and a live stop, the entry-fill bar included | new stop price or `None` |
 | `on_tp_update(trade_id)` | Same | new target price or `None` |
 | `on_close_position(trade_id, result)` | The bar the position closes | — |
 
@@ -60,13 +60,60 @@ runs. Read them; do not set them.
 | `timestamp_ms` | int | Bar timestamp, epoch milliseconds UTC. |
 | `closes`, `highs`, `lows`, `opens`, `volumes` | ndarray or `None` | Chronological history, `arr[-1]` is the current bar. Length is `min(history_bars, bars so far)`, capped at 300 by default. |
 | `htf_closes`, `htf_highs`, `htf_lows`, `htf_opens`, `htf_volumes` | ndarray or `None` | The same for the second feed. `None` when only one timeframe was supplied. |
-| `account_value` | float | Broker equity, marked to market. |
+| `account_value` | float | Broker equity, marked to market. Equal to `account.equity`. |
+| `account` | `AccountInputs` | The full account state — see below. |
 | `position_size` | float | Absolute size, `0.0` when flat. |
 | `position_direction` | str or `None` | `"long"`, `"short"`, or `None`. |
 | `config` | dict | Strategy configuration. Always `{}` on the `run()` path — see the limitation below. |
 
+### `account`
+
+`account_value` is one number, and one number cannot tell you whether the
+entry you got was the entry you asked for, what the fees have already cost,
+or how far below its peak the account is. Those decide whether a risk gate
+should fire, so they are injected too.
+
+The balance, equity, realized/unrealized split, daily PnL, peak equity and
+drawdown come from `koval.engine.account_state.PlatformAccountState` — the
+same MIT account contract as paper. In this plugin the graph context is bound
+to the broker ledger. Full runtime parity still has the
+[documented engine gaps](execution-validation.md#remaining-engine-011-integration-gaps).
+
+| Field | Meaning |
+|---|---|
+| `balance` | Starting capital plus realized results and fees. Excludes open PnL. |
+| `equity` | `balance` plus the open position marked to the last close. |
+| `realized_pnl`, `unrealized_pnl` | The two halves of the above, kept apart. |
+| `daily_pnl` | Equity minus the previous bar's equity at the UTC day boundary (initial capital on the first day). |
+| `peak_equity`, `drawdown_pct` | Running peak and the distance below it. |
+| `margin_used`, `free_margin` | Notional over leverage for the open position, and what remains. |
+| `fees`, `fees_paid` | Cumulative commission and liquidation fees; the latter is a compatibility alias. |
+| `daily_loss_pct`, `trade_realized_pnl` | Engine daily-loss percentage and gross ledger trade PnL. |
+| `open_position` | Canonical engine position: buy/sell side, actual average price, quantity, current stop and margin. |
+| `funding_paid`, `funding_status` | Signed funding and `modelled` with v2 funding evidence; otherwise zero and `unavailable`. `funding` is the canonical field. |
+| `open_positions` | `0` or `1`. This adapter never pyramids. |
+| `position` | `None` when flat, otherwise the record below. |
+
+`account.position` describes what actually happened, not what was requested:
+
+| Field | Meaning |
+|---|---|
+| `side` | `"long"` or `"short"`. |
+| `entry_price` | The **actual** fill, gap and costs included. |
+| `quantity` | The **actual** filled size. |
+| `current_stop` | The stop in force now, including any move the strategy made. |
+| `entry_commission` | Commission charged on the entry leg. |
+| `risk_amount` | Quote-currency loss if the position closes at its stop, counting the adverse adjustment on the exit and the commission on both legs. A bar that *gaps* through the stop costs more than this. |
+
+Sizing from `setup.entry_price` after a gap is sizing from a price the
+account never paid. `ORDER_FILLED` carries `planned_risk`, `actual_risk` and `risk_drift`.
+These use configured fixed cost assumptions and are estimates when fee or
+impact evidence overrides those costs; inspect the actual execution ledger.
+Stop widening and invalid final stop/target pairs fail before cancelling live
+simulation protection. Valid profit locks and target changes are supported.
+
 The arrays are freshly allocated each bar; slicing them is cheap, and
-mutating them affects nothing. If your indicator needs more than 300 bars of
+mutating them affects nothing. If your indicator needs more than 1000 bars of
 history, raise `history_bars` (see below) — until you do, `closes` is
 silently truncated and a 200-period average computed from it is wrong.
 

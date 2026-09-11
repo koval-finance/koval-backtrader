@@ -26,7 +26,7 @@ update it in the same change.
 |---|---|
 | Anything touching licensing or the entry point | [invariants.md](invariants.md) — before writing code |
 | Change how orders, fills, or exits behave | [architecture.md](architecture.md), then [testing.md](testing.md) |
-| Execution readiness record and deferred effects | [../docs/execution-plan.md](../docs/execution-plan.md) |
+| Execution readiness record and deferred effects | [../docs/execution-validation.md](../docs/execution-validation.md) |
 | Upgrade the Backtrader dependency | [invariants.md](invariants.md), then [troubleshooting.md](troubleshooting.md) |
 | Test failure or unexpected behaviour | [troubleshooting.md](troubleshooting.md), then [testing.md](testing.md) |
 | Cutting a release | [release_process.md](release_process.md) |

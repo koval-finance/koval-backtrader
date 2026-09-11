@@ -45,7 +45,7 @@ ProtocolVersionError: spec protocol_version=2 unsupported; engine speaks 1
 
 The installed koval-engine is newer than this adapter and has changed the
 shape of `EngineRunSpec` or `BacktestResult`. Upgrade `koval-backtrader`, or
-pin the engine back inside the declared range (`>=0.10.0,<0.11.0` for 0.10.x).
+pin the engine back inside the declared range (`>=0.11.0,<0.12.0` for 0.11.x).
 The bound is a real statement about protocol compatibility, so widening it
 locally trades a clear error for a silent misinterpretation.
 
@@ -130,8 +130,8 @@ match. See [execution-model.md](execution-model.md#fees).
 ## Results look too good
 
 They probably are. Before anything else, check the assumptions listed in
-[execution-model.md](execution-model.md#what-is-not-modelled): funding,
-liquidity, partial fills and liquidation remain unavailable. Check
+[execution-model.md](execution-model.md#what-is-not-modelled). V2 supports
+optional evidence for funding, liquidity and liquidation, with explicit limits. Check
 `metrics.execution_model.version`: legacy is fees-only; `ohlcv_fixed_v1`
 includes only configured fixed spread/slippage and uniform fees. Then:
 
@@ -146,10 +146,42 @@ Versioned requests require explicit commission/spread/slippage values in the
 [documented shape](execution-model.md#versions-and-resolved-configuration).
 Do not mix old top-level fee overrides with `execution_model`. Cost numbers
 must be finite, non-negative numeric values, not strings or booleans. Typos,
-unknown modes and unsupported funding/latency/participation fields fail rather
-than being ignored, including in unversioned requests. Valid legacy configs
+unknown modes and unsupported fields fail rather than being ignored. Funding,
+fees, instruments, marks and execution proxies require the v2 documented
+evidence shape; nonzero cancellation/replacement latency is refused. Valid legacy configs
 retain their previous behavior; malformed configs formerly relying on silent
 fallback must be corrected explicitly.
+
+## A spot run refuses a short or refuses to start
+
+Both come from the optional `market` block. If the run raises before any bar
+(`a spot market cannot use leverage ...`), the block declares a spot product
+while `execution_model.leverage` is above 1 — spot has no leverage, so the run
+does not start. If instead entries are refused mid-run with `ORDER_REJECTED`
+reason `spot_short_unsupported`, the strategy tried to open a short on a spot
+market; longs continue normally.
+
+Neither happens without a `market` block. If you want the old unconstrained
+behaviour back, remove the block — but then the result no longer claims the
+venue could have produced it, and it is graded `partial` for reproducibility.
+See [declaring the market](execution-model.md#declaring-the-market).
+
+## A result is graded `partial`
+
+`metrics.run_identity.reproducibility.reasons` names every cause:
+
+- `unversioned_execution_model` — the run used `legacy_v1`. Move to
+  `ohlcv_fixed_v1`.
+- `market_identity_absent` / `dataset_evidence_absent` — supply the optional
+  `market` and `evidence` blocks.
+- `timeframe_duration_unresolved` — a single-feed run used a timeframe label
+  the engine cannot convert to a duration. The run is still valid; its warm-up
+  bounds simply cannot be stated in milliseconds.
+
+`partial` is the retained legacy grade and never becomes `full`, even with
+all labels present. Use canonical `comparability`, stream/profile identities
+and the release review together. `identified_simulation` identifies inputs;
+it is not a certification of archive quality or exchange fidelity.
 
 ## A synthetic fill lies outside the candle
 
@@ -161,9 +193,10 @@ costs, even if its hypothetical submission price was affordable.
 
 ## Funding is zero or account PnL differs from the trade sum
 
-`funding_status: "unavailable"` means no accrual producer exists. Neither
-an empty synthetic series nor today's exchange rate makes historical funding
-available. See the [funding follow-up](execution-research.md#staged-follow-up-and-acceptance-criteria).
+`funding_status: "unavailable"` means no funding evidence was applied. V2
+can settle a normalized FundingSeries with complete coverage and archived
+settlement marks. Account funding is separate from closed-trade statistics.
+See [the evidence contract](execution-model.md#accounting-leverage-and-affordability).
 For an open position, account PnL includes its unrealized price PnL and entry
 commission. Use the two [reconciliation identities](results.md#reconciliation).
 Do not subtract spread/slippage a second time from actual-fill PnL.

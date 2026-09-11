@@ -72,6 +72,10 @@ src/koval_backtrader/
 ├── execution_config.py  versioned assumptions and legacy fee resolution
 ├── execution_broker.py  synthetic price costs and actual-fill ledger
 ├── execution_audit.py   model metadata, attribution and reconciliation
+├── realistic_broker.py  v2 protection, partial fills, instrument/mark risk
+├── execution_evidence.py normalized evidence transport and validation
+├── evidence_execution.py funding, fees and actual cashflows
+├── strategy_account.py graph account binding for engine 0.11
 └── oco_patch.py         guard against a Backtrader OCO ghost-trade bug
 ```
 

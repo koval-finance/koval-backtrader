@@ -17,10 +17,10 @@
 price costs, input rejection, metadata, replay and reconciliation through the
 real runner. `test_execution_broker.py` covers market closes beyond the current
 adapter's bracket-only exit path. These use deterministic candles and no cheat
-modes. Funding remains unavailable; supplied series and analyzer-only nonzero
-adjustments are rejected rather than presented as simulated accrual.
+modes. V1 rejects funding evidence; v2 models it in the broker. Nonzero
+analyzer-only adjustments remain invalid for costed profiles.
 
-The [readiness review](../docs/execution-validation.md#platform-readiness-review)
+The [readiness review](../docs/execution-validation.md#review-findings-corrected-in-this-repository)
 found two defects that a green suite had not caught: HTF tests asserted that
 arrays were present but never that a bar had closed, and timestamp tests never
 compared event and ledger rounding at nonzero millisecond offsets. Both are
@@ -65,6 +65,20 @@ it is testing unpatched Backtrader.
 Every guard in this repository was verified by breaking the thing it protects
 and watching it go red. If you add one, do the same and say so in the report.
 A guard that has only ever passed is decoration.
+
+## 0.11 conformance and artifacts
+
+Run against the published engine in the declared dependency range. Public
+fixtures are version-dispatched with no skips. The shared engine comparator
+checks baseline matching; advanced evidence tests also prove funding, partial
+OCO, instrument rounding, actual liquidity accounting, latency and lagged impact.
+Actual LiveEngine replay verifies spot continuation, target updates and stream
+identity. One narrowly scoped engine mark-price waiver must fail when stale.
+
+The default suite checks any local `dist/` against package source bytes and
+metadata. Rebuild stale artifacts; never relax the gate. Release CI runs the
+same checker after building and before upload. See
+[release_process.md](release_process.md) for isolated wheel verification.
 
 ## Update this file when
 

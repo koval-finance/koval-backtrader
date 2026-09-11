@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Koval Backtrader Adapter — strategy execution shim
-# All backtrader-specific code lives here. Strategies never import backtrader.
+# Strategies never import Backtrader; broker implementations live beside this bridge.
 from __future__ import annotations
 
+from dataclasses import asdict, replace
 from math import isfinite
 
 import backtrader as bt
@@ -10,11 +11,16 @@ import numpy as np
 from koval.engine.engine_events import EngineEvent, EventType
 from koval.engine.history_window import DEFAULT_HISTORY_BARS
 from koval.engine.logger import get_logger
+from koval.engine.protection import validate_protection_update
 from koval.strategy.base.declarative import DeclarativeStrategy
 from koval.strategy.base.trade_setup import TradeSetup
 from koval.strategy.helpers.risk.position_sizer import calculate_position_size
 
-from koval_backtrader.execution_config import FIXED_VERSION
+from koval_backtrader.execution_account import ExecutionAccount, revalidated_risk
+from koval_backtrader.execution_config import COSTED_VERSIONS
+from koval_backtrader.market_identity import rejects_direction
+from koval_backtrader.research_metrics import segment_inputs
+from koval_backtrader.strategy_account import bind_strategy_account
 from koval_backtrader.time_conversion import num2utc_ms, utc_ms
 
 logger = get_logger(__name__)
@@ -25,6 +31,7 @@ logger = get_logger(__name__)
 _EXIT_REASON_LABELS: dict[str, str] = {
     "stop_loss": "Stop Loss",
     "take_profit": "Take Profit",
+    "liquidation": "Liquidation",
 }
 
 _DEFAULT_PARAMS: tuple = (
@@ -38,6 +45,7 @@ _DEFAULT_PARAMS: tuple = (
     ("execution_metadata", None),
     ("primary_timeframe_ms", None),
     ("htf_timeframe_ms", None),
+    ("market_identity", None),
 )
 
 
@@ -64,8 +72,21 @@ class BTStrategyAdapter(bt.Strategy):
         self._trade_info: dict[int, dict] = {}
         self._pending_entry_size: float = 0.0
         self._pending_exit_price: float | None = None
+        # Per-trade research inputs, gathered while the position is open.
+        self._open_trade: dict | None = None
+        self._bars_in_position: int = 0
+        self._notified_fills = {}
         self._next_trade_id: int = 1
-        self._equity_peak: float = self.broker.startingcash
+        self._account = ExecutionAccount(
+            self.broker.startingcash,
+            commission_bps=self._commission_bps(),
+            adjustment_fraction=self._adjustment_fraction(),
+            ledger=getattr(self.broker, "account_ledger", None),
+            funding_status=getattr(self.broker, "funding_status", "unavailable"),
+        )
+        if hasattr(self.broker, "bind_data"):
+            self.broker.bind_data(self.data)
+        bind_strategy_account(self._strategy, self._account)
         self._dd_limit_hit: bool = False
         self._entry_exec_bar: int = -1
         self._last_exit_reason: str = "unknown"
@@ -82,20 +103,38 @@ class BTStrategyAdapter(bt.Strategy):
     def _create_strategy_instance(self) -> DeclarativeStrategy:
         raise NotImplementedError
 
+    def _commission_bps(self) -> float:
+        """The rate risk arithmetic should charge, or zero when none is modelled."""
+        metadata = self.params.execution_metadata
+        if metadata is None:
+            return 0.0
+        return float(metadata["resolved_config"]["execution_model"].get("commission_bps", 0.0))
+
+    def _adjustment_fraction(self) -> float:
+        """Half spread plus slippage as a fraction. Zero outside the fixed model."""
+        metadata = self.params.execution_metadata
+        if metadata is None or metadata["version"] not in COSTED_VERSIONS:
+            return 0.0
+        model = metadata["resolved_config"]["execution_model"]
+        return (float(model["spread_bps"]) / 2 + float(model["slippage_bps"])) / 10_000
+
     def _timestamp_ms(self) -> int:
         timestamp = self.data.datetime.datetime(0)
         metadata = self.params.execution_metadata
-        if metadata is not None and metadata["version"] == FIXED_VERSION:
+        if metadata is not None and metadata["version"] in COSTED_VERSIONS:
             return utc_ms(timestamp)
         # Legacy keeps naive-datetime epoch conversion for reproduction only.
         return int(timestamp.timestamp() * 1000)
 
+    def _safe_timestamp_ms(self) -> int:
+        try:
+            return self._timestamp_ms()
+        except Exception:
+            return 0
+
     def _emit(self, event_type: EventType, payload: dict | None = None) -> None:
         bar = len(self.data) if self.data is not None else 0
-        try:
-            ts = self._timestamp_ms()
-        except Exception:
-            ts = 0
+        ts = self._safe_timestamp_ms()
         event = EngineEvent(
             event_type=event_type,
             bar_index=bar,
@@ -119,11 +158,9 @@ class BTStrategyAdapter(bt.Strategy):
         except Exception:
             s.volume = 0.0
         s.bar_index = len(self.data)
-        try:
-            s.timestamp_ms = self._timestamp_ms()
-        except Exception:
-            s.timestamp_ms = 0
+        s.timestamp_ms = self._safe_timestamp_ms()
         s.account_value = self.broker.getvalue()
+        s.account = self._account.snapshot()
         s.position_size = abs(float(self.position.size)) if self.position else 0.0
         s.position_direction = (
             "long" if self.position.size > 0 else "short" if self.position.size < 0 else None
@@ -182,14 +219,21 @@ class BTStrategyAdapter(bt.Strategy):
                         s.htf_volumes = np.zeros(m, dtype=float)
 
     def next(self) -> None:
+        if getattr(self, "_last_decision_bar", None) == len(self.data):
+            return
+        self._last_decision_bar = len(self.data)
         if self._dd_limit_hit:
             return
+        # Same order as the engine's live runner: fills have already been
+        # notified, the account absorbs this bar's equity, then the strategy
+        # sees it. Reversing these two would show a stale drawdown.
+        self._account.on_bar(equity=self.broker.getvalue(), timestamp_ms=self._safe_timestamp_ms())
+        self._track_excursion()
         self._inject_state()
         # Every bar, open position or not: the engine's live runner calls this
         # after syncing state, and a strategy that behaves differently in a
         # backtest than it does in paper is worse than no backtest.
         self._strategy.on_bar()
-        self._equity_peak = max(self._equity_peak, self.broker.getvalue())
         if not self.position:
             if self._entry_order is not None and self._entry_order.alive():
                 if self._strategy.should_cancel_entry():
@@ -232,6 +276,25 @@ class BTStrategyAdapter(bt.Strategy):
         self._submit_entry(setup)
 
     def _submit_entry(self, setup: TradeSetup) -> None:
+        # A spot product has no borrow, so a spot-labelled run must not open a
+        # position the venue would refuse. Checked here, beside the
+        # affordability rule, so the refusal reports the same fields any other
+        # refusal does. It is an event, not a halt: a long/short strategy keeps
+        # running its longs.
+        unsupported = rejects_direction(self.params.market_identity, setup.direction)
+        if unsupported is not None:
+            self._emit(
+                EventType.ORDER_REJECTED,
+                {
+                    "direction": setup.direction,
+                    "entry_type": setup.entry_type,
+                    "size": setup.size,
+                    "price": setup.entry_price,
+                    "reason": unsupported,
+                },
+            )
+            return
+
         size = setup.size
         if size is None:
             size = calculate_position_size(
@@ -242,16 +305,29 @@ class BTStrategyAdapter(bt.Strategy):
                 direction=setup.direction,
                 leverage=self.params.leverage,
             )
+        validator = getattr(self.broker, "validate_entry", None)
+        if validator is not None:
+            if setup.take_profit is None:
+                distance = abs(setup.entry_price - setup.stop_loss) * self.params.risk_reward_ratio
+                setup = replace(
+                    setup,
+                    take_profit=setup.entry_price
+                    + (distance if setup.direction == "long" else -distance),
+                )
+            validator(setup, size)
         if size <= 0:
             return
 
         metadata = self.params.execution_metadata
-        if metadata is not None and metadata["version"] == FIXED_VERSION:
+        if metadata is not None and metadata["version"] in COSTED_VERSIONS:
             model = metadata["resolved_config"]["execution_model"]
             reference = float(setup.entry_price)
             required = size * reference / float(model["leverage"]) + (
                 size * reference * float(model["commission_bps"]) / 10_000
             )
+            submission = getattr(self.broker, "submission_requirement", None)
+            if submission is not None:
+                required = submission(setup, size, self._safe_timestamp_ms())
             available = float(self.broker.getvalue()) - self._margin_in_use()
             # A non-finite order is a defect, not an affordability outcome: it
             # must fail loudly rather than be reported as a margin rejection.
@@ -278,14 +354,25 @@ class BTStrategyAdapter(bt.Strategy):
         is_long = setup.direction == "long"
         order_fn = self.buy if is_long else self.sell
 
+        entry_options = {"_checksubmit": False} if validator is not None else {}
         if setup.entry_type == "market":
-            self._entry_order = order_fn(size=size)
+            self._entry_order = order_fn(size=size, koval_setup=setup, **entry_options)
         elif setup.entry_type == "limit":
             self._entry_order = order_fn(
-                price=setup.entry_price, exectype=bt.Order.Limit, size=size
+                price=setup.entry_price,
+                exectype=bt.Order.Limit,
+                size=size,
+                koval_setup=setup,
+                **entry_options,
             )
         else:
-            self._entry_order = order_fn(price=setup.entry_price, exectype=bt.Order.Stop, size=size)
+            self._entry_order = order_fn(
+                price=setup.entry_price,
+                exectype=bt.Order.Stop,
+                size=size,
+                koval_setup=setup,
+                **entry_options,
+            )
 
         self._emit(
             EventType.ORDER_PLACED,
@@ -312,6 +399,26 @@ class BTStrategyAdapter(bt.Strategy):
         return (
             abs(float(self.position.size)) * float(self.position.price) / float(model["leverage"])
         )
+
+    def _track_excursion(self) -> None:
+        """Widen the open trade's high/low with this bar. Diagnostic only.
+
+        Never injected into the strategy: it describes bars the strategy has
+        already acted on, and feeding it back would be look-ahead.
+        """
+        open_trade = self._open_trade
+        if open_trade is None:
+            return
+        open_trade["high"] = max(open_trade["high"], float(self.data.high[0]))
+        open_trade["low"] = min(open_trade["low"], float(self.data.low[0]))
+
+    def _entry_margin(self, fill_price: float, size: float) -> float:
+        """Margin an actual fill ties up. Zero when no margin model applies."""
+        metadata = self.params.execution_metadata
+        if metadata is None or metadata["version"] not in COSTED_VERSIONS:
+            return 0.0
+        leverage = float(metadata["resolved_config"]["execution_model"]["leverage"])
+        return abs(size) * abs(fill_price) / leverage
 
     def _place_bracket(self, exec_price: float, size: float, setup: TradeSetup) -> None:
         sl = setup.stop_loss
@@ -359,7 +466,12 @@ class BTStrategyAdapter(bt.Strategy):
     def _update_exits(self) -> None:
         if self._stop_order is None or not self._stop_order.alive():
             return
-        if self._entry_exec_bar < 0 or len(self.data) == self._entry_exec_bar:
+        # The entry-fill bar is included. Protection still cannot *fill* on it,
+        # but the MIT paper runtime accepts a replacement there, and dropping
+        # the strategy's instruction outright made a trailing stop behave
+        # differently in a backtest than in paper. Pinned by
+        # tests/test_paper_parity.py::dynamic_stop_requested_on_entry_fill_bar.
+        if self._entry_exec_bar < 0:
             return
         size = abs(self.position.size)
         is_long = self.position.size > 0
@@ -386,6 +498,19 @@ class BTStrategyAdapter(bt.Strategy):
         target_sl = new_sl if sl_changed else current_sl
         target_tp = new_tp if tp_changed else current_tp
 
+        normalize = getattr(self.broker, "normalize_protection", None)
+        if normalize is not None:
+            target_sl, target_tp = normalize(self, target_sl, target_tp)
+        validate_protection_update(
+            side="buy" if is_long else "sell",
+            current_stop=current_sl,
+            stop_price=target_sl,
+            target_price=target_tp,
+        )
+        self._account.on_stop_moved(target_sl)
+        updated = getattr(self.broker, "protection_updated", None)
+        if updated is not None:
+            updated(self, target_sl, target_tp)
         self.cancel(self._stop_order)
         self._stop_order = order_fn(
             price=target_sl,
@@ -410,21 +535,95 @@ class BTStrategyAdapter(bt.Strategy):
         if order.status in (order.Submitted, order.Accepted):
             return
 
-        if order.status == order.Completed:
-            if order == self._entry_order:
-                self._entry_order = None
-                size = abs(order.executed.size)
-                if self._pending_setup is None:
+        if order.status in (order.Completed, order.Partial):
+            prior_size, prior_value, prior_fee, prior_pnl = self._notified_fills.get(
+                order.ref, (0.0, 0.0, 0.0, 0.0)
+            )
+            cumulative_size = abs(float(order.executed.size))
+            cumulative_value = cumulative_size * float(order.executed.price)
+            delta_size = cumulative_size - prior_size
+            delta_fee = float(order.executed.comm) - prior_fee
+            delta_pnl = float(order.executed.pnl) - prior_pnl
+            self._notified_fills[order.ref] = (
+                cumulative_size,
+                cumulative_value,
+                float(order.executed.comm),
+                float(order.executed.pnl),
+            )
+            if order == self._entry_order or order.info.get("koval_setup") is not None:
+                if order.status == order.Completed:
+                    self._entry_order = None
+                size = cumulative_size
+                setup = self._pending_setup or order.info.get("koval_setup")
+                if setup is None or delta_size <= 0:
                     return
                 self._pending_entry_size = size
-                self._place_bracket(order.executed.price, size, self._pending_setup)
+                if not order.info.get("koval_protection_placed", False):
+                    self._place_bracket(order.executed.price, size, setup)
                 self._entry_exec_bar = len(self.data)
+                fill_price = float(order.executed.price)
+                commission = float(order.executed.comm)
+                risk = revalidated_risk(
+                    direction=setup.direction,
+                    requested_price=float(setup.entry_price),
+                    requested_size=float(setup.size if setup.size is not None else size),
+                    fill_price=fill_price,
+                    filled_size=size,
+                    stop_price=float(setup.stop_loss),
+                    commission_bps=self._commission_bps(),
+                    adjustment_fraction=self._adjustment_fraction(),
+                )
+                if prior_size:
+                    self._open_trade.update(
+                        entry_price=fill_price, size=size, risk_at_entry=risk["actual_risk"]
+                    )
+                    for trade in self._trade_map.values():
+                        trade["size"] = size
+                else:
+                    self._open_trade = {
+                        "direction": setup.direction,
+                        "entry_price": fill_price,
+                        "size": size,
+                        "bar": len(self.data),
+                        "timestamp_ms": self._safe_timestamp_ms(),
+                        "risk_at_entry": risk["actual_risk"],
+                        # The fill bar counts: the position was held for the rest
+                        # of it, and its range is part of the excursion.
+                        "high": float(self.data.high[0]),
+                        "low": float(self.data.low[0]),
+                    }
+                if prior_size:
+                    delta_price = (cumulative_value - prior_value) / delta_size
+                    self._account.on_entry_fill(
+                        fill_price=delta_price,
+                        quantity=delta_size,
+                        commission=delta_fee,
+                        margin=self._entry_margin(delta_price, delta_size),
+                    )
+                else:
+                    self._pending_setup = setup
+                    self._account.on_open(
+                        direction=setup.direction,
+                        fill_price=fill_price,
+                        quantity=size,
+                        stop_price=float(setup.stop_loss),
+                        commission=commission,
+                        margin=self._entry_margin(fill_price, size),
+                    )
+                # The gap and the modelled costs are only knowable now. A risk
+                # gate that never revalidates here is gating on a price the
+                # account did not pay.
                 self._emit(
                     EventType.ORDER_FILLED,
                     {
-                        "direction": self._pending_setup.direction,
+                        "direction": setup.direction,
                         "fill_price": order.executed.price,
                         "size": size,
+                        "commission": delta_fee,
+                        "fill_quantity": delta_size,
+                        "cumulative_quantity": size,
+                        "status": "partial" if order.status == order.Partial else "filled",
+                        **risk,
                     },
                 )
                 return
@@ -432,8 +631,19 @@ class BTStrategyAdapter(bt.Strategy):
             is_stop = self._stop_order is not None and order.ref == self._stop_order.ref
             is_tp = self._tp_order is not None and order.ref == self._tp_order.ref
 
+            if order.info.get("koval_role") == "liquidation":
+                self._pending_exit_price = float(order.executed.price)
+                self._last_exit_reason = "liquidation"
+                self._stop_order = self._tp_order = None
             if is_stop or is_tp:
                 self._pending_exit_price = float(order.executed.price)
+
+            if order.status == order.Partial:
+                self._account.on_partial_close(
+                    quantity=delta_size, realized_pnl=delta_pnl, commission=delta_fee
+                )
+                self._last_exit_reason = "stop_loss" if is_stop else "take_profit"
+                return
 
             if is_stop:
                 if self._tp_order:
@@ -454,12 +664,14 @@ class BTStrategyAdapter(bt.Strategy):
                 self._entry_order = None
                 self._cancelled_entry_ref = None
                 setup = self._pending_setup
-                self._pending_setup = None
+                if not order.executed.size:
+                    self._pending_setup = None
                 reason = {
                     order.Margin: "insufficient_margin",
                     order.Canceled: "canceled",
                     order.Rejected: "rejected",
                 }[order.status]
+                reason = order.info.get("koval_rejection", reason)
                 self._emit(
                     EventType.ORDER_REJECTED,
                     {
@@ -471,6 +683,51 @@ class BTStrategyAdapter(bt.Strategy):
                     },
                 )
 
+    def _close_research_record(self) -> dict:
+        """Excursion, holding time, risk and segment keys for the closing trade.
+
+        MAE/MFE are measured from bar highs and lows over the holding period,
+        including the fill bar and the exit bar. The true intrabar path is
+        unknown, so the real excursion is at least this bad.
+        """
+        open_trade = self._open_trade
+        self._open_trade = None
+        if open_trade is None:
+            return {}
+        high = max(open_trade["high"], float(self.data.high[0]))
+        low = min(open_trade["low"], float(self.data.low[0]))
+        entry = open_trade["entry_price"]
+        size = open_trade["size"]
+        if open_trade["direction"] == "long":
+            favorable, adverse = high - entry, entry - low
+        else:
+            favorable, adverse = entry - low, high - entry
+        bars = len(self.data) - open_trade["bar"] + 1
+        self._bars_in_position += bars
+        market = self.params.market_identity
+        return {
+            "max_favorable_excursion": max(0.0, favorable) * size,
+            "max_adverse_excursion": max(0.0, adverse) * size,
+            "holding_bars": bars,
+            "holding_seconds": max(
+                0.0, (self._safe_timestamp_ms() - open_trade["timestamp_ms"]) / 1000.0
+            ),
+            "risk_at_entry": open_trade["risk_at_entry"],
+            "segment": segment_inputs(
+                open_trade["timestamp_ms"], None if market is None else market.as_dict()
+            ),
+        }
+
+    def _open_trade_bars(self) -> int:
+        """Bars held by a position still open at the end of the data, if any."""
+        if self._open_trade is None:
+            return 0
+        return len(self.data) - self._open_trade["bar"] + 1
+
+    def exposure_bars(self) -> int:
+        """Bars on which a position was held, closed trades and any open one."""
+        return self._bars_in_position + self._open_trade_bars()
+
     def notify_trade(self, trade: bt.Trade) -> None:
         if trade.justopened:
             if self._pending_setup:
@@ -478,7 +735,14 @@ class BTStrategyAdapter(bt.Strategy):
                     "setup": self._pending_setup,
                     "size": self._pending_entry_size,
                 }
-                self._strategy.on_open_position(self._next_trade_id, self._pending_setup)
+                self._strategy.on_open_position(
+                    self._next_trade_id,
+                    replace(
+                        self._pending_setup,
+                        entry_price=float(trade.price),
+                        size=self._pending_entry_size,
+                    ),
+                )
                 self._emit(
                     EventType.TRADE_OPENED,
                     {
@@ -500,13 +764,22 @@ class BTStrategyAdapter(bt.Strategy):
             # the cleared state.
             exit_reason = self._last_exit_reason
             exit_price = self._pending_exit_price
+            fills = getattr(self.broker, "trade_fills", {}).get(self._next_trade_id, [])
+            liquidation_fee = sum(fill.get("liquidation_fee", 0.0) for fill in fills)
+            exit_fills = [fill for fill in fills if fill["role"] == "exit"]
+            if exit_fills:
+                exit_price = sum(fill["size"] * fill["fill_price"] for fill in exit_fills) / sum(
+                    fill["size"] for fill in exit_fills
+                )
             result = {
                 "pnl": trade.pnl,
-                "pnl_comm": trade.pnlcomm,
+                "pnl_comm": trade.pnlcomm - liquidation_fee,
                 "exit_reason": exit_reason,
                 "setup": setup,
             }
+            research = self._close_research_record()
             self._trade_info[trade.ref] = {
+                **research,
                 "size": stored.get("size", self._pending_entry_size),
                 "exit_reason": _EXIT_REASON_LABELS.get(exit_reason, "Manual"),
                 "exit_price": exit_price,
@@ -523,13 +796,23 @@ class BTStrategyAdapter(bt.Strategy):
             # reason/price if it ever closes via a non-bracket path.
             self._pending_exit_price = None
             self._last_exit_reason = "unknown"
+            # Costed runs already booked gross PnL and every fill fee in the
+            # shared broker ledger. Legacy local accounts book them separately;
+            # the previously paid entry fee must not be charged again.
+            entry_commission = self._account.entry_commission
+            total_commission = float(trade.pnl) - float(trade.pnlcomm)
+            self._account.on_close(
+                realized_pnl=float(trade.pnl),
+                commission=total_commission - entry_commission,
+            )
             self._strategy.on_close_position(self._next_trade_id, result)
             self._emit(
                 EventType.TRADE_CLOSED,
                 {
                     "trade_id": self._next_trade_id,
                     "pnl": trade.pnl,
-                    "pnl_comm": trade.pnlcomm,
+                    "pnl_comm": trade.pnlcomm - liquidation_fee,
+                    "liquidation_fee": liquidation_fee,
                     "exit_reason": exit_reason,
                     "entry_price": float(trade.price),
                     # Every close reaching here came through a bracket leg, and
@@ -556,9 +839,17 @@ class BTStrategyAdapter(bt.Strategy):
 
     def _check_drawdown(self) -> None:
         max_dd = self.params.max_drawdown
-        if not max_dd or max_dd <= 0 or self._equity_peak <= 0:
+        if not max_dd or max_dd <= 0:
             return
-        dd_pct = 100.0 * (self._equity_peak - self.broker.getvalue()) / self._equity_peak
+        # The peak comes from the same account state the paper runtime reports,
+        # rather than a second counter that could drift from it. The comparison
+        # still uses the live broker value: this runs during close notification,
+        # before the account has absorbed this bar's equity, and reading the
+        # account's equity here would delay every trip by one bar.
+        peak = self._account.peak_equity
+        if peak <= 0:
+            return
+        dd_pct = 100.0 * (peak - self.broker.getvalue()) / peak
         if dd_pct > max_dd and not self._dd_limit_hit:
             self._dd_limit_hit = True
             self._emit(EventType.DRAWDOWN_LIMIT_HIT, {"drawdown_pct": dd_pct, "limit": max_dd})
@@ -573,6 +864,8 @@ class BTStrategyAdapter(bt.Strategy):
             {
                 "total_trades": self._next_trade_id - 1,
                 "final_value": self.broker.getvalue(),
+                "account": asdict(self._account.snapshot()),
+                "account_ledger": self._account.ledger_entries(),
             },
         )
 

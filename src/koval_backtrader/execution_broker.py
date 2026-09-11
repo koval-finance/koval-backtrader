@@ -7,6 +7,7 @@ from math import isfinite
 
 import backtrader as bt
 
+from koval_backtrader.execution_account import IncrementalAccountLedger
 from koval_backtrader.time_conversion import num2utc_ms
 
 
@@ -24,6 +25,10 @@ class ExecutionCostBroker(bt.brokers.BackBroker):
         self.execution_fills: list[dict] = []
         self.trade_fills: dict[int, list[dict]] = {}
         self._execution_trade_id = 1
+
+    def start(self):
+        super().start()
+        self.account_ledger = IncrementalAccountLedger(self.startingcash)
 
     def _adjust_price(self, order, reference):
         model = self.p.execution_model
@@ -56,6 +61,15 @@ class ExecutionCostBroker(bt.brokers.BackBroker):
         adjusted = self._adjust_price(order, reference)
         if not isfinite(adjusted) or adjusted <= 0 or not isfinite(adjusted * size):
             raise ValueError("execution adjusted price and notional must be positive and finite")
+        if not self.positions[order.data].size and not hasattr(self, "execution"):
+            model = self.p.execution_model
+            notional = abs(size) * adjusted
+            required = notional / model.leverage + notional * model.commission_bps / 10000
+            if required > self.account_ledger.balance:
+                order.margin()
+                self.notify(order)
+                return
+        prior_price = self.positions[order.data].price
         prior_size = order.executed.size
         prior_commission = order.executed.comm
         role = "exit" if self.positions[order.data].size else "entry"
@@ -70,6 +84,22 @@ class ExecutionCostBroker(bt.brokers.BackBroker):
                 order.executed.comm - prior_commission,
                 role,
             )
+            if not hasattr(self, "execution"):
+                fill = self.execution_fills[-1]
+                if role == "exit":
+                    self.account_ledger.record(
+                        timestamp_ms=fill["timestamp_ms"],
+                        kind="trade_pnl",
+                        amount=-executed_size * (adjusted - prior_price),
+                        reference_id=str(fill["fill_id"]),
+                    )
+                if fill["commission"]:
+                    self.account_ledger.record(
+                        timestamp_ms=fill["timestamp_ms"],
+                        kind="commission",
+                        amount=-fill["commission"],
+                        reference_id=str(fill["fill_id"]),
+                    )
         return result
 
     def _record_fill(self, order, reference, adjusted, signed_size, commission, role):

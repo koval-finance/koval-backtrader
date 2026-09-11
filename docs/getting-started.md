@@ -185,9 +185,11 @@ hand-written strategy running through this adapter.
 ## Before you trust a number
 
 Read [execution-model.md](execution-model.md). Legacy execution is fees-only;
-`ohlcv_fixed_v1` adds explicit fixed spread/slippage assumptions. Funding,
-liquidity and liquidation remain unavailable. Neither model reconstructs an
-order book or supplies a guaranteed performance bound.
+`ohlcv_fixed_v1` adds explicit fixed spread/slippage assumptions.
+`ohlcv_realistic_v2` adds entry-bar protection and optional archived execution
+evidence, including funding and a liquidity proxy. No profile reconstructs
+an order book or guarantees venue outcomes. Pair profiles with engine 0.11 and
+read the [known integration gaps](execution-validation.md).
 
 ## See also
 

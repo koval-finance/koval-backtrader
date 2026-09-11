@@ -104,6 +104,9 @@ class EquityCurveAnalyzer(bt.Analyzer):
         self.equity_curve = []
 
     def next(self):
+        if getattr(self, "_last_primary_bar", None) == len(self.datas[0]):
+            return
+        self._last_primary_bar = len(self.datas[0])
         self.equity_curve.append(
             {
                 "timestamp": self.datas[0].datetime.datetime(0),

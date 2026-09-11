@@ -4,6 +4,54 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-09-11
+
+### Added
+
+- Opt-in `ohlcv_realistic_v2`, paired with engine `paper_ohlcv_realistic_v2`:
+  entry-bar protection, stop-first ambiguity records and local outcome sensitivity.
+- Offline engine evidence for funding, fee schedules, instrument constraints,
+  mark-price liquidation, partial fills, volume participation and lagged impact.
+  Resolved evidence is JSON-replayable; unsupported currency conversion,
+  contract multipliers and cancellation/replacement delays fail explicitly.
+- Engine `koval_run_identity_v1` stream/profile/evidence identities, canonical
+  Binance/WhiteBIT markets and execution-capability negotiation.
+- Actual-fill account snapshots for graph strategies, incremental ledger totals,
+  run-local fill/order IDs, partial OCO resizing and session ledger exports.
+- Research metrics: expectancy, time under water, exposure, holding time,
+  bar-resolution excursions, cost attribution and unfinished-position valuation.
+- Distribution guard comparing wheel/sdist package bytes and metadata with
+  the working tree, in the test suite and release workflow before upload.
+
+### Fixed
+
+- Removed stale engine divergence exceptions; every published fixture is now
+  dispatched by contract/profile version, including v2 and spot refusal.
+- Protective updates validate the final pair and refuse stop widening before
+  cancellation. Target updates and replacements on the entry-fill bar work.
+- Fees, gross trade PnL, funding and liquidation fees reconcile separately.
+  Partial-fill quantities/commissions accumulate without losing remaining protection.
+- Tick/step normalization survives risk and volume caps. Price improvement is
+  signed correctly in reconciliation. Only actual fills consume liquidity.
+- Both costed profiles recheck short affordability at a gapped actual fill.
+  Evidence fees also govern affordability. Invalid v2 orders, gapped streams,
+  missing mark coverage and silently ignored extra timeframes are refused.
+- Trailing HTF data no longer repeats the final primary candle or extends trading.
+- Open-position costs no longer contaminate closed-trade cost ratios; profit
+  locks no longer report locked profit as capital at risk.
+
+### Compatibility and limitations
+
+- Requires published `koval-engine>=0.11.0,<0.12.0`; protocol version remains 1.
+  Legacy and fixed-v1 fill timing remain available. Corrected graph account
+  inputs, stop validation and HTF handling can change affected strategies.
+- Input identification is not certification. The legacy reproducibility grade
+  remains `partial`; no result is promoted to fully reproducible by a caller hash.
+- Advanced paper parity still has known engine 0.11 gaps in residual marks,
+  quantity steps, liquidity reservation and graph account binding. See
+  [the release review](docs/execution-validation.md). OHLCV execution is not a
+  guarantee of Binance/WhiteBIT outcomes. Application integration is separate.
+
 ## [0.10.0] - 2026-09-06
 
 ### Fixed

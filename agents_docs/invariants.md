@@ -20,10 +20,17 @@ exist.
 | No `koval` package is published from this distribution | [`tests/test_package_metadata.py`](../tests/test_package_metadata.py) |
 | The engine dependency is a range, not an exact pin | [`tests/test_package_metadata.py`](../tests/test_package_metadata.py) |
 | Maintainer-private paths are never tracked by git | [`tests/test_public_surface.py`](../tests/test_public_surface.py) |
-| The venue clients are never imported into this package | [`tests/test_public_surface.py`](../tests/test_public_surface.py) |
+| No plugin source directly imports venue clients | [`tests/test_public_surface.py`](../tests/test_public_surface.py) |
 | No private planning language reaches the published tree | [`tests/test_public_language.py`](../tests/test_public_language.py) |
 | The sdist contains the whole public test suite | [`tests/test_sdist_contents.py`](../tests/test_sdist_contents.py) |
 | The release pipeline gates on lint, tests, and the changelog | [`tests/test_release_workflow.py`](../tests/test_release_workflow.py) |
+| Fills, costs and account state agree with the MIT paper broker | [`tests/test_paper_parity.py`](../tests/test_paper_parity.py) |
+| Every divergence from paper carries a declared reason code, and a stale exemption fails | [`tests/test_paper_parity.py`](../tests/test_paper_parity.py) |
+| Every shipped engine parity fixture is reproduced in full, none skipped | [`tests/test_parity_fixtures.py`](../tests/test_parity_fixtures.py) |
+| A declared spot market permits neither shorts nor leverage | [`tests/test_market_identity.py`](../tests/test_market_identity.py) |
+| A run that cannot prove its inputs is graded `partial`, never `full` | [`tests/test_run_identity.py`](../tests/test_run_identity.py) |
+| Strategies see actual fills and the engine's own account state | [`tests/test_execution_account.py`](../tests/test_execution_account.py) |
+| No metric is reported as zero or infinity when it is unavailable | [`tests/test_research_metrics.py`](../tests/test_research_metrics.py) |
 
 ## The licence boundary
 
@@ -87,6 +94,28 @@ prices must reach the broker before fees and account value are computed.
 Any upstream upgrade needs the limit/gap, cash-rejection, OCO and reconciliation
 tests in addition to a source review. The audited version and source hash are
 recorded in [../docs/execution-research.md](../docs/execution-research.md).
+
+## Parity with the MIT paper broker
+
+`ohlcv_fixed_v1` and the engine's `paper_ohlcv_fixed_v1` are two independent
+implementations of one contract. That is the point: agreement between them is
+evidence, where agreement between a thing and itself is not.
+
+`tests/test_paper_parity.py` compares baseline v1/v2 fills and full account
+snapshots with no active waivers. `tests/test_realistic_evidence.py` adds evidence
+and partial lifecycle scenarios. It has one exact bar-equity waiver for the
+published engine's partial-exit mark defect, using the engine comparator:
+unexpected differences and unused waivers both fail. Quantity/volume regressions
+also pin deliberate plugin corrections. Never broaden a waiver to silence a
+failure. Update [the review record](../docs/execution-validation.md) when an
+upstream fix changes these boundaries.
+
+`strategy_account.py` is a version-scoped private bridge: graph contexts must
+read the actual broker account. Do not remove its graph regression until the
+engine exposes and the plugin adopts a public binding hook.
+
+Source distribution identity is pinned by `tests/test_dist_artifacts.py` and
+`scripts/check_dist.py`. A version is not enough if local package bytes differ.
 
 ## Update this file when
 

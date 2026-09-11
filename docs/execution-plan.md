@@ -2,7 +2,7 @@
 
 Status: **the two defects this record tracked are closed in 0.10.0**, each
 under a test written and observed failing first. The
-[readiness review](execution-validation.md#platform-readiness-review) holds the
+[readiness review](execution-validation.md#review-findings-corrected-in-this-repository) holds the
 evidence; the [research record](execution-research.md) remains the source for
 model decisions and for effects that are deliberately still unmodelled.
 

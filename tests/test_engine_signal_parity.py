@@ -76,3 +76,98 @@ def test_live_and_backtest_emit_same_signal_directions():
     backtest = _signal_dirs_backtest(graph, candles)
     assert live, "expected at least one signal"
     assert live == backtest
+
+
+def test_live_runtime_continues_after_spot_refusal_and_honors_target_updates(monkeypatch):
+    from koval.strategy.base.declarative import DeclarativeStrategy
+    from koval.strategy.base.trade_setup import TradeSetup
+
+    from koval_backtrader import backtest_runner
+
+    class SpotThenLong(DeclarativeStrategy):
+        def was_blocked(self):
+            return False
+
+        def should_short(self):
+            return self.bar_index == 1
+
+        def should_long(self):
+            return self.bar_index == 2
+
+        def go_short(self):
+            return TradeSetup(
+                direction="short",
+                entry_price=100.0,
+                stop_loss=110.0,
+                take_profit=80.0,
+                size=1.0,
+                entry_type="market",
+            )
+
+        def go_long(self):
+            return TradeSetup(
+                direction="long",
+                entry_price=100.0,
+                stop_loss=90.0,
+                take_profit=120.0,
+                size=1.0,
+                entry_type="market",
+            )
+
+        def on_tp_update(self, trade_id):
+            return 105.0 if self.bar_index == 3 else None
+
+    monkeypatch.setattr("koval.engine.live_engine.assemble_from_graph", lambda _: SpotThenLong())
+    monkeypatch.setattr(backtest_runner, "assemble_from_graph", lambda _: SpotThenLong())
+    candles = np.array([[i * 60_000, 100.0, 106.0, 99.0, 100.0, 100.0] for i in range(5)])
+    model = {
+        "version": "ohlcv_realistic_v2",
+        "commission_bps": 0.0,
+        "spread_bps": 0.0,
+        "slippage_bps": 0.0,
+        "leverage": 1.0,
+    }
+    live_events, plugin_events = [], []
+    runtime = LiveEngine(
+        {},
+        LiveEngineConfig(
+            symbol="BTCUSDT",
+            timeframe="1m",
+            initial_capital=10000.0,
+            exchange="binance",
+            market="spot",
+            execution=model | {"version": "paper_ohlcv_realistic_v2"},
+        ),
+        on_event=live_events.append,
+    )
+    runtime.run(ReplayFeed(candles, delay_seconds=0.0), StopSignal())
+    result = backtest_runner.create_engine().run(
+        EngineRunSpec(
+            graph={},
+            feeds={"1m": candles},
+            initial_capital=10000.0,
+            execution_config={
+                "exchange": "binance",
+                "exchange_type": "spot",
+                "execution_model": model,
+                "market": {
+                    "exchange": "binance",
+                    "market": "spot",
+                    "canonical_symbol": "BTCUSDT",
+                    "contract_type": "spot",
+                },
+            },
+        ),
+        on_event=plugin_events.append,
+    )
+    assert result.metrics["final_capital"] == 10005.0
+    assert runtime._broker.equity == 10005.0
+    for events in (live_events, plugin_events):
+        rejections = [e for e in events if e["event_type"] == "ORDER_REJECTED"]
+        assert rejections[0]["payload"]["reason"] == "spot_short_unsupported"
+        assert len([e for e in events if e["event_type"] == "TRADE_CLOSED"]) == 1
+    assert result.trades[0]["exit_price"] == 105.0
+    assert (
+        result.metrics["run_identity"]["dataset_identity"]["primary"]
+        == runtime._run_identity()["dataset_identity"]["primary"]
+    )

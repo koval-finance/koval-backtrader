@@ -35,19 +35,28 @@ in either direction, so a caller never links Backtrader by accident.
 
 ```
 src/koval_backtrader/
-├── backtest_runner.py   194 lines  the plugin: spec in, result out
-├── bt_adapter.py        605 lines  DeclarativeStrategy → bt.Strategy bridge
-├── bt_analyzers.py      115 lines  trade list and equity curve extraction
+├── backtest_runner.py   316 lines  the plugin: spec in, result out
+├── bt_adapter.py        898 lines  DeclarativeStrategy → bt.Strategy bridge
+├── bt_analyzers.py      118 lines  trade list and equity curve extraction
 └── oco_patch.py         148 lines  the Backtrader OCO bug fix
 ```
 
-These four core modules are joined by four execution modules:
+These four core modules are joined by focused execution modules. The broker
+modules import Backtrader; evidence and identity modules use pure engine contracts:
 
 | Module | Responsibility |
 |---|---|
-| `execution_config.py` | Validate settings, resolve legacy fees and produce a frozen model without importing Backtrader |
+| `execution_config.py` | Validate settings, resolve legacy fees and produce a frozen model |
+| `realistic_broker.py` | Independent v2 matching, partial lifecycle, volume budget and liquidation |
+| `evidence_execution.py` | Funding cursor, evidence fees and actual cashflow ledger |
+| `execution_evidence.py` | Strict typed/JSON normalized evidence validation and replay |
+| `strategy_account.py` | Narrow engine-0.11 graph account binding; replace with a public engine hook when available |
 | `execution_broker.py` | Adjust a matched price before real broker execution; record actual fills only |
 | `execution_audit.py` | Plain metadata, per-trade attribution and run-level reconciliation; never changes cash |
+| `execution_account.py` | Feed the engine's `PlatformAccountState` and shape the account a strategy sizes risk from |
+| `market_identity.py` | Canonical venue/market/symbol identity, and the constraints a spot product imposes |
+| `run_identity.py` | Graph, feed and evidence fingerprints, and the honest reproducibility grade |
+| `research_metrics.py` | Expectancy, exposure, excursion and cost share, aggregated from the persisted ledgers |
 | `time_conversion.py` | The one UTC millisecond conversion shared by events, ledgers and injected state |
 
 `tests/` is flat and mirrors those names.
@@ -59,7 +68,7 @@ enough to read in one sitting. In order:
 
 1. `check_protocol_version(spec)` — refuse a spec from a newer engine rather
    than silently misinterpreting it.
-   Then resolve the execution model and validate v1 input data before strategy
+   Then resolve the execution model and validate costed input data before strategy
    assembly; build metadata including the source fingerprint and versions.
 2. `ordered_timeframes()` — sort the feed keys ascending, so `data0` is
    always the lowest timeframe and `data1` the higher one regardless of dict
@@ -73,8 +82,9 @@ enough to read in one sitting. In order:
    resolved commission, and `ExecutionCostBroker` for `ohlcv_fixed_v1`.
 6. `cerebro.run()`, then read the two analyzers.
 7. Reduce to plain data and hand the closed trades to the engine's
-   `build_closed_trade_metrics()`. Add drawdown, execution metadata and v1
-   cost/reconciliation dictionaries inside the existing `metrics` seam.
+   `build_closed_trade_metrics()`. Add drawdown, execution metadata, v1/v2
+   cost/reconciliation dictionaries, the run identity and the research
+   metrics inside the existing `metrics` seam.
 
 `_feed_from_ndarray()` converts an `(N, 6)` float array — column 0 is epoch
 milliseconds, then OHLCV — into a Backtrader feed with a UTC index. An empty
@@ -236,3 +246,15 @@ Two rules hold everywhere in this tree. Nothing here may import application
 code, and this distribution must never ship a `koval` package — the engine
 owns that import namespace, and a second distribution adding to it shadows
 unpredictably. Both are pinned by `tests/test_package_metadata.py`.
+
+## Engine 0.11 integration
+
+The runner negotiates execution capabilities before strategy assembly, validates
+v2 stream continuity, and caps secondary feeds at the primary endpoint.
+`RealisticBroker` owns ordering and cash mutation; analyzers never debit costs.
+Partial callbacks update the graph's actual quantity and margin. Evidence
+serialization strips raw responses but preserves normalized content identity.
+The deprecated plugin reproducibility grade never promises certification.
+
+Read [execution-validation.md](execution-validation.md) for current engine gaps;
+matching baseline fixtures is not general advanced-graph parity.

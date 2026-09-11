@@ -15,8 +15,15 @@ from datetime import datetime
 import backtrader as bt
 import numpy as np
 import pandas as pd
-from koval.engine.backtest_engine import BacktestResult, EngineRunSpec, check_protocol_version
+from koval.engine.backtest_engine import (
+    BacktestResult,
+    EngineRunSpec,
+    ExecutionCapabilities,
+    check_protocol_version,
+    negotiate_execution_capabilities,
+)
 from koval.engine.engine_events import EngineEvent
+from koval.engine.run_identity import CandleStreamIdentity
 from koval.engine.timeframe_utils import ordered_timeframes, timeframe_to_minutes
 from koval.engine.trade_metrics import build_closed_trade_metrics
 from koval.strategy.block_assembler import assemble_from_graph
@@ -25,8 +32,15 @@ from koval_backtrader.bt_adapter import make_bt_strategy_class
 from koval_backtrader.bt_analyzers import EquityCurveAnalyzer, TradeListAnalyzer
 from koval_backtrader.execution_audit import build_execution_audit, execution_metadata
 from koval_backtrader.execution_broker import ExecutionCostBroker
-from koval_backtrader.execution_config import FIXED_VERSION, resolve_execution_model
+from koval_backtrader.execution_config import (
+    COSTED_VERSIONS,
+    REALISTIC_VERSION,
+    resolve_execution_model,
+)
 from koval_backtrader.oco_patch import apply_oco_guard
+from koval_backtrader.realistic_broker import RealisticBroker
+from koval_backtrader.research_metrics import build_research_metrics
+from koval_backtrader.run_identity import build_run_identity
 
 apply_oco_guard()
 
@@ -44,6 +58,19 @@ def _timeframe_ms(timeframe: str) -> int:
     if minutes >= _UNKNOWN_TIMEFRAME_MINUTES:
         raise ValueError(f"unknown timeframe: {timeframe!r}")
     return minutes * 60_000
+
+
+def _optional_timeframe_ms(timeframe: str) -> int | None:
+    """Duration when the label resolves, otherwise None.
+
+    A single-feed run has always accepted any label the engine can order, and
+    that stays true. The result records the unresolved duration rather than
+    inventing one, and grades itself accordingly.
+    """
+    try:
+        return _timeframe_ms(timeframe)
+    except ValueError:
+        return None
 
 
 def _validate_fixed_inputs(spec: EngineRunSpec) -> None:
@@ -113,6 +140,28 @@ def _max_drawdown(equity_curve: list[dict]) -> float:
     return max_dd
 
 
+def _open_position_view(position, last_close: float) -> dict | None:
+    """A position still open at the end of the data, valued but not realised.
+
+    Marking it at the last close is not the same as flattening it: no exit was
+    simulated, no exit cost was charged, and the number would move if the data
+    ran one bar longer. Keeping the two apart stops an unrealised mark from
+    being read as a completed result.
+    """
+    size = float(position.size)
+    if not size:
+        return None
+    return {
+        "direction": "long" if size > 0 else "short",
+        "quantity": abs(size),
+        "entry_price": float(position.price),
+        "last_close": float(last_close),
+        "unrealized_pnl": size * (float(last_close) - float(position.price)),
+        "realized": False,
+        "valuation": "marked_to_last_close",
+    }
+
+
 class BacktraderBacktestEngine:
     """Runs a backtest with Backtrader. Implements ``BacktestEngineProtocol``."""
 
@@ -123,19 +172,51 @@ class BacktraderBacktestEngine:
     ) -> BacktestResult:
         check_protocol_version(spec)
         model = resolve_execution_model(spec.execution_config)
-        if model.version == FIXED_VERSION:
+        if len(spec.feeds) > 2:
+            raise ValueError("this plugin supports at most two timeframes for one instrument")
+        if model.version in COSTED_VERSIONS:
             _validate_fixed_inputs(spec)
+        if model.version == REALISTIC_VERSION:
+            for timeframe, candles in spec.feeds.items():
+                identity = CandleStreamIdentity(timeframe)
+                for row in candles:
+                    identity.append(row)
+        features = ["run_identity"]
+        if model.version == REALISTIC_VERSION:
+            features += ["same_bar_protection"]
+            features += list(model.execution_evidence.as_config())
+        negotiated = negotiate_execution_capabilities(
+            spec,
+            ExecutionCapabilities(
+                execution_contract_versions=(1, 2) if model.version == REALISTIC_VERSION else (1,),
+                features=tuple(features),
+            ),
+        )
+        if model.execution_evidence.mark_prices is not None:
+            marks = model.execution_evidence.mark_prices
+            primary = spec.feeds[ordered_timeframes(list(spec.feeds))[0]]
+            if any(marks.at(int(row[0])) is None for row in primary):
+                raise ValueError("mark price evidence must cover every primary bar")
         metadata = execution_metadata(model)
+        metadata["negotiated_capabilities"] = {
+            "execution_contract_version": negotiated.execution_contract_version,
+            "features": list(negotiated.features),
+        }
         timeframes = ordered_timeframes(list(spec.feeds.keys()))
         # Only higher-timeframe availability needs durations, so a single-feed
-        # run keeps accepting any label the engine's ordering accepts.
+        # run keeps accepting any label the engine's ordering accepts. A
+        # multi-timeframe run cannot: every label there must resolve, or the
+        # availability arithmetic is guesswork.
         primary_ms = htf_ms = None
         if len(timeframes) > 1:
-            primary_ms, htf_ms = (_timeframe_ms(tf) for tf in timeframes[:2])
+            durations = {tf: _timeframe_ms(tf) for tf in timeframes}
+            primary_ms, htf_ms = (durations[tf] for tf in timeframes[:2])
             if htf_ms % primary_ms != 0:
                 raise ValueError(
                     "higher timeframe must be a whole multiple of the primary timeframe"
                 )
+        else:
+            durations = {tf: _optional_timeframe_ms(tf) for tf in timeframes}
         strategy = assemble_from_graph(spec.graph)
         bt_cls = make_bt_strategy_class(
             type(strategy),
@@ -143,13 +224,24 @@ class BacktraderBacktestEngine:
             execution_metadata=metadata,
             primary_timeframe_ms=primary_ms,
             htf_timeframe_ms=htf_ms,
+            market_identity=model.market,
         )
 
         cerebro = bt.Cerebro()
-        if model.version == FIXED_VERSION:
-            cerebro.setbroker(ExecutionCostBroker(execution_model=model))
+        if model.version in COSTED_VERSIONS:
+            broker_cls = (
+                RealisticBroker if model.version == REALISTIC_VERSION else ExecutionCostBroker
+            )
+            cerebro.setbroker(broker_cls(execution_model=model))
         for tf in timeframes:
-            cerebro.adddata(_feed_from_ndarray(spec.feeds[tf]))
+            candles = spec.feeds[tf]
+            if tf != timeframes[0]:
+                # A secondary feed cannot advance execution beyond the primary
+                # dataset or replay its last candle as fresh liquidity.
+                candles = candles[candles[:, 0] <= spec.feeds[timeframes[0]][-1, 0]]
+                if not len(candles):
+                    raise ValueError("higher timeframe has no bars within the primary interval")
+            cerebro.adddata(_feed_from_ndarray(candles))
         cerebro.broker.setcash(spec.initial_capital)
         # Stock-like linear cash with Backtrader's leverage: a long entry debits
         # notional / leverage of cash and equity stays cash + position value.
@@ -175,8 +267,20 @@ class BacktraderBacktestEngine:
         )
         metrics["max_drawdown"] = _max_drawdown(equity_curve)
         metrics["execution_model"] = metadata
-        if model.version == FIXED_VERSION:
-            position = cerebro.broker.getposition(strat.data)
+        metrics["run_identity"] = build_run_identity(
+            graph=spec.graph,
+            feeds=spec.feeds,
+            durations=durations,
+            ordered_timeframes=timeframes,
+            history_bars=strat.params.history_bars,
+            model=model,
+            implementation_sha256=metadata["implementation_sha256"],
+            initial_capital=spec.initial_capital,
+            consumed_bars=len(equity_curve),
+        )
+        position = cerebro.broker.getposition(strat.data)
+        last_close = float(strat.data.close[0])
+        if model.version in COSTED_VERSIONS:
             metrics["execution_costs"] = build_execution_audit(
                 fills=cerebro.broker.execution_fills,
                 trades=trades,
@@ -184,8 +288,26 @@ class BacktraderBacktestEngine:
                 final_capital=cerebro.broker.getvalue(),
                 position_size=position.size,
                 position_price=position.price,
-                last_close=float(strat.data.close[0]),
+                last_close=last_close,
+                funding_entries=getattr(
+                    getattr(cerebro.broker, "execution", None), "funding_entries", ()
+                ),
+                funding_status=getattr(cerebro.broker, "funding_status", "unavailable"),
+                liquidation_fee=sum(
+                    fill.get("liquidation_fee", 0.0) for fill in cerebro.broker.execution_fills
+                ),
             )
+        if model.version == REALISTIC_VERSION:
+            metrics["execution_costs"]["ambiguities"] = list(cerebro.broker.ambiguities)
+        metrics["research"] = build_research_metrics(
+            trades=trades,
+            equity_curve=equity_curve,
+            total_bars=len(equity_curve),
+            bars_in_position=strat.exposure_bars(),
+            max_drawdown_pct=metrics["max_drawdown"],
+            execution_costs=metrics.get("execution_costs"),
+            open_position=_open_position_view(position, last_close),
+        )
         return BacktestResult(metrics=dict(metrics), trades=trades, equity_curve=equity_curve)
 
 

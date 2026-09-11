@@ -9,7 +9,7 @@ distribution metadata, so there is no second copy to drift. There is no
 
 ## Compatibility with the engine
 
-The dependency is a range — currently `koval-engine>=0.10.0,<0.11.0` — never
+The dependency is a range — currently `koval-engine>=0.11.0,<0.12.0` — never
 an exact pin. A plugin that hard-pins one engine patch version forces every
 downstream user into lockstep upgrades.
 
@@ -36,12 +36,27 @@ loosened bound hoping for the best.
 
 The tag triggers `release.yml`, which verifies on three Python versions,
 checks that the tag matches the packaged version, extracts the changelog
-entry, builds, runs `twine check --strict`, publishes to PyPI through Trusted
+entry, builds, compares package bytes and version metadata with
+`scripts/check_dist.py --require-artifacts`, runs `twine check --strict`, publishes to PyPI through Trusted
 Publishing (OIDC — no long-lived PyPI credential exists in this repository),
 and only then creates the GitHub release.
 
 Publishing is irreversible: a filename on PyPI can never be reused, even after
 deletion. The gates run before the upload for that reason.
+
+## Local release validation
+
+Build with `python -m build`. Every local wheel and sdist must match current
+package bytes and version metadata; the default suite rejects stale artifacts.
+Then run `python scripts/check_dist.py --require-artifacts`,
+`python -m twine check --strict dist/*`, and `./scripts/verify.sh`.
+Install the wheel into a fresh environment outside the checkout, run `pip check`
+and verify discovery plus the published engine fixtures from that environment.
+Rebuild after changing any package source. Keep artifacts local; the tag workflow
+builds and publishes independently from the human's committed tree.
+
+Engine 0.11.0 is publicly available. The 0.11 review documents advanced parity
+limits; never convert passing build checks into an exchange-fidelity claim.
 
 ## Update this file when
 

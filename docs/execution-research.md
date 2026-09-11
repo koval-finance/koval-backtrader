@@ -1,5 +1,10 @@
 # Execution-cost milestone decision record
 
+The original sections below describe the 0.10 fixed-cost milestone. Current
+0.11 behavior and remaining gaps supersede those deferred-status statements;
+see [execution-model.md](execution-model.md) and
+[execution-validation.md](execution-validation.md).
+
 Research accessed **2026-09-05**. This is a deterministic historical simulation,
 not an order-book reconstruction or a performance bound. Implementation and
 verification evidence is recorded in [execution-validation.md](execution-validation.md).
@@ -214,3 +219,23 @@ none is completed merely because it is written down.
    pass. Add intended/simulated/observed price-drift logging with tested
    thresholds before any sandbox promotion. Update engine and plugin pins only
    after compatible packages are released; no GPL imports into MIT code.
+
+## 0.11 review: primary sources and implementation decisions
+
+Accessed 2026-09-11. These sources inform modeling choices; no venue API was
+called to place orders, and no external implementation was copied into matching.
+
+| Primary source | Relevant observation | Decision in this plugin |
+|---|---|---|
+| [Backtrader volume fillers](https://www.backtrader.com/docu/filler/) | The filler determines executed size from a bar; partial execution changes lifecycle handling | Implement cumulative fills, OCO resizing and one shared budget before enabling the v2 filler |
+| [NautilusTrader backtesting](https://nautilustrader.io/docs/latest/concepts/backtesting/) | Simulation behavior depends on the chosen data and execution configuration | Version timing assumptions and bind results to exact data/configuration; isolate v2 from legacy replay |
+| [HftBacktest order fills](https://hftbacktest.readthedocs.io/en/latest/order_fill.html) | Replayed data cannot respond to simulated orders; queue assumptions and liquidity-taking approximations matter | Label volume/impact as an OHLCV proxy and retain depth/queue limitations even when calibration is archived |
+| [Binance symbol filters](https://developers.binance.com/en/docs/products/spot/filters) | Price ticks, quantity steps, market-specific lot rules and notional constraints are distinct; some depend on a reference/average price | Reapply quantity steps after sizing caps; disclose that the normalized engine spec is a subset and candle reference prices do not reconstruct every venue filter |
+| [WhiteBIT market fields](https://docs.whitebit.com/api-reference/market-data/market-info) | Markets disclose quantity precision, minimum amount/total, maximum total and trading status | Keep venue evidence time-bound; a current configuration is not proof of historical rules or availability |
+| [WhiteBIT futures markets](https://docs.whitebit.com/api-reference/market-data/available-futures-markets-list) | Futures use native perpetual symbols and expose funding/quote information | Preserve `BTC_PERP` as canonical `BTCPERP`, consume archived funding/marks, and avoid mapping it to a different spot-style symbol |
+
+The engineering conclusion is deliberately narrower than exchange equivalence:
+independent runtime conformance plus auditable evidence is necessary, but cannot
+recover an unobserved intrabar path, venue queue or historical account fee tier.
+The review therefore corrected signed rounding, actual-volume allocation,
+coverage checks and ledger propagation, and retained explicit unsupported cases.

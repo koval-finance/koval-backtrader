@@ -1,454 +1,261 @@
 # Execution model
 
-What the simulated broker actually does. Read this before you believe a
-number this package produces.
-
-A backtest is a claim about what would have happened. The claim is only as
-good as the mechanics behind it, so this page spells out every rule: when
-orders are placed, at what price they fill, what is charged, and — most
-importantly — what is not modelled at all.
+Version 0.11 runs against published `koval-engine>=0.11.0,<0.12.0`.
+It simulates one instrument from closed OHLCV bars. Matching historical and
+paper results demonstrates implementation conformance, not equivalent exchange
+fills. See the [verification and review record](execution-validation.md).
 
 ## Versions and resolved configuration
 
-No config, or `{}`, retains fee-free legacy execution. An unversioned venue
-config retains fees-only execution with the engine's existing fee precedence.
-Valid legacy prices, PnL and equity are preserved. Malformed numeric values,
-unknown keys and unsupported settings now raise `ValueError` instead of being
-silently ignored or defaulted. Numeric strings and booleans are not numbers
-in this contract.
+| Plugin profile | Paired paper profile | Protection | Optional execution evidence |
+|---|---|---|---|
+| `legacy_v1` | No execution-parity claim | Bar after entry fill | None |
+| `ohlcv_fixed_v1` | `paper_ohlcv_fixed_v1` | Bar after entry fill | None |
+| `ohlcv_realistic_v2` | `paper_ohlcv_realistic_v2` | Entry-fill bar, subject to activation latency | Funding, fees, instruments, marks, execution proxy |
 
-Opt into the fixed cost model explicitly through the existing engine seam:
+A bare `EngineRunSpec` remains fee-free legacy. CLI defaults can supply legacy
+fees. A versioned request states costs explicitly:
 
 ```python
 execution_config = {
     "exchange": "binance",
     "exchange_type": "future",
+    "market": {
+        "exchange": "binance",
+        "market": "future",
+        "canonical_symbol": "BTCUSDT",
+        "contract_type": "perpetual",
+    },
     "execution_model": {
-        "version": "ohlcv_fixed_v1",
+        "version": "ohlcv_realistic_v2",
         "commission_bps": 4.0,
         "spread_bps": 20.0,
         "slippage_bps": 10.0,
+        "leverage": 1.0,
     },
 }
 ```
 
-These numbers are illustrative assumptions, not observed Binance rates or
-spreads. Pass this dictionary as `EngineRunSpec.execution_config`.
-`spread_bps` is the **full spread**; each execution incurs half. Slippage and
-commission are per execution. One basis point is `0.0001` as a fraction.
-All four model fields and the top-level market identifiers are required.
-`exchange_type` must be `spot` or `future`; the latter means linear accounting,
-not inverse contracts. Both labels are recorded in the resolved metadata, but
-neither changes what the simulation permits: `spot` does **not** currently
-forbid short positions or force `leverage` to 1, so a spot-labelled run can
-produce a position no spot venue would let you open. Treat the label as
-provenance for the fee assumption, not as a venue constraint. Unknown fields, duplicate fee settings outside the
-model, unsupported versions, negative/non-finite costs, or costs at least
-10,000 bps are rejected. Half spread plus slippage must also be below 10,000
-bps, so an adverse sell fill remains positive.
+These rates are assumptions, not an exchange fee quote. `leverage` defaults
+to 1 and accepts [1, 125]. Costs must be finite, non-negative and below 10,000
+bps; half spread plus slippage must also be below 10,000. Unknown fields,
+versions and conflicting legacy fee overrides fail. `legacy_v1` accepts only
+`version` and `commission_bps` inside its model.
 
-`legacy_v1` accepts only `version` and explicit `commission_bps` inside
-`execution_model`; spread and slippage are fixed at zero by that version.
-The top-level exchange labels also remain required. A fee-free legacy snapshot
-uses `"unspecified"` for both. Every result returns
-`metrics.execution_model.resolved_config`, which can be passed back unchanged.
-It freezes the effective fee rather than consulting a changing defaults table.
-Replay also requires the same graph, candles and software; package versions
-and a plugin source fingerprint accompany the configuration. An already stored
-unversioned historical run needs its original software/defaults to reconstruct
-that first snapshot.
+Store `metrics.execution_model.resolved_config`; it is JSON-replayable,
+including normalized evidence. Typed engine evidence dataclasses and equivalent
+JSON mappings are accepted in the five optional top-level fields below.
+Decimal values serialize as strings. Raw venue responses are not embedded:
+the caller owns their archive and provenance.
 
-In v1, fill-ledger, event and injected strategy timestamps are explicitly UTC
-and independent of the host timezone. Legacy event/strategy epoch conversion
-retains its old naive-datetime behavior for compatibility; reproduce those
-with the original host timezone as well as the original software. Trade
-timestamps remain UTC and equity timestamps remain naive UTC in both models.
+`EngineRunSpec.execution_contract_version=2` can require v2. Required capability
+names are `run_identity`, `same_bar_protection`, `funding`, `fee_schedule`,
+`instrument_specs`, `mark_prices`, and `execution_proxy`. Evidence capabilities
+are offered only when their inputs are supplied. Unsupported requests raise
+`ProtocolVersionError` before simulation. A default version-1 request still
+accepts an explicitly selected v2 profile; record the profile as well as the
+negotiated request.
 
-Legacy requests recognize the engine fee fields `commission` (fraction),
-`taker_fee` (percent), `maker_fee_bps`, `taker_fee_bps`,
-`broker_commission_bps`, `fee_source`, `paper_commission_side`, and venue/mode
-fields. Engine fee precedence remains unchanged; `broker_commission_bps` is
-a resolved output field, not an override. Prefer the strict versioned form.
-This plugin never routes an order to a venue regardless of those labels.
+## Declaring the market
+
+The engine's canonical identity is `{exchange, market, canonical_symbol,
+contract_type}`. Supported exchanges are `binance` and `whitebit`, markets
+`spot` and `future`, contracts `spot` and `perpetual`. Delivery and inverse
+contracts are unsupported. Old six-field market blocks with `venue`, `symbol`,
+`base_currency`, and `quote_currency` remain accepted but resolve to the engine
+identity. `futures` resolves to `future`; WhiteBIT `BTC_PERP` becomes `BTCPERP`,
+not `BTCUSDT`.
+
+A declared spot market refuses leverage above one and softly rejects shorts
+with `spot_short_unsupported`, allowing later long signals. Labels and market
+identity must agree. Without a market block, historical label-only behavior
+remains unconstrained and the run is not comparable by canonical market.
+Every optional execution-evidence block requires an explicit market identity.
+
+## Binding a result to its inputs
+
+Every run emits `koval_run_identity_v1`: primary candle stream, empty preseed
+warmup, graph, paired execution profile, evidence hashes, market, run
+parameters, engine and plugin versions, and plugin source fingerprint.
+The optional legacy `evidence` provenance block requires `dataset_id`, `source`,
+`retrieved_at_ms` and a lowercase `content_sha256`; a caller's assertion does
+not certify historical completeness.
+
+Shared stream hashes use the engine encoding. Old plugin feed hashes remain
+as extensions and include all supplied feeds. An irregular v1 stream keeps
+its old encoding and is `not_comparable`. `identified_simulation` identifies
+inputs; it never means venue fidelity or full reproducibility. The deprecated
+plugin `reproducibility.level` is always `partial`.
 
 ## The bar clock
 
-Everything is driven by closed bars. There is no intra-bar simulation and no
-tick data; a bar is four prices and a volume, and the broker can only reason
-about those.
+A primary candle is timestamped at its opening time. The broker handles that
+bar, notifications update the account, then the strategy sees the closed bar
+and decides. New strategy entries become eligible on a later primary bar.
+Equity and decisions are recorded once per primary bar. A higher-timeframe
+feed cannot extend execution past the primary dataset.
 
-One bar, in order:
-
-1. The broker processes the pending order queue against this bar's prices.
-   Anything that fills, fills now.
-2. Fill notifications reach the strategy adapter (`notify_order`,
-   `notify_trade`). New orders created here are queued, not executed.
-3. `next()` runs: the adapter injects state into the strategy, calls its
-   `on_bar()`, the strategy decides, and any resulting order is queued.
-4. The equity analyzer records account value once.
-
-Step 1 happens before step 3, which is the whole reason an order placed on
-bar N cannot fill on bar N.
+V2 equal-timestamp order follows the engine contract: funding settlement,
+mark-price liquidation, entry fill, bracket activation, stop/target fill, OCO
+sibling cancellation, dynamic replacement. Existing protection is evaluated
+before an outstanding entry remainder. A protective fill cancels that remainder.
 
 ## Entry timing
 
-| Bar | What happens |
-|---|---|
-| N | The strategy sees bar N closed, signals, and the adapter submits the entry order. |
-| N+1 | The entry fills. The adapter places the stop-loss and take-profit bracket. |
-| N+2 | The bracket is live and can fill from this bar on. |
+V1 signals on N, fills on N+1, protects from N+2. V2 can open and close on
+N+1. An entry already beyond its requested bracket is contained at the matched
+market reference. For an ordinary entry-bar stop touch, a pre-entry opening
+gap is not reused as the stop fill. Existing stops retain gap-through behavior.
 
-So the earliest possible round trip is three bars, and a position can never
-be opened and closed within one bar. This is the Koval execution contract v1
-timing, implemented independently here and by the MIT paper broker; the shared
-[parity fixtures](https://pypi.org/project/koval-engine/) (`koval.examples.parity_fixtures`)
-assert that both produce the same fills and the same final equity. If you are comparing against a
-vectorised backtester that assumes same-bar entry at the signal price, this
-package will look worse, and it is the more honest of the two.
+### Where this differs from the paper broker
 
-`SIGNAL_DETECTED` carries `entry_price` — the price the strategy asked for.
-`ORDER_FILLED` carries `fill_price` — the price it got. They differ whenever
-the market gapped, and the difference is real, not an artefact.
+All published 0.11 fixtures run, selected by contract and profile version.
+Baseline v1/v2 differential scenarios have no waivers. The old favorable-limit,
+target-update and spot-refusal exceptions are removed. Actual `LiveEngine`
+replay also covers a refused spot short followed by a long and a moved target.
+
+Advanced combinations still have engine-side gaps: partial-exit residual
+valuation, quantity re-quantization after risk sizing, and volume reserved
+before risk clipping. Graph account binding also needs a public runtime hook.
+The exact examples, reason codes and affected comparisons are in
+[execution-validation.md](execution-validation.md#remaining-engine-011-integration-gaps).
+Do not claim general graph or advanced-evidence parity until these are resolved.
 
 ## Fill prices
 
-Reference-price matching is Backtrader's. The rules below describe legacy
-fills and the reference prices to which `ohlcv_fixed_v1` applies costs.
-
-**Market** (`entry_type: "market"`) fills at the **open of the next bar**.
-Not at the signal bar's close. A gap between the two is your gap.
-
-**Limit** (`entry_type: "limit"`, and every take-profit) fills when the bar
-touches the price:
-
-- If the bar opens through the limit, it fills at the open — you get the
-  better price.
-- Otherwise, if the bar's range reaches the limit, it fills exactly at the
-  limit price.
-- If the bar never reaches it, the order stays live.
-
-**Stop** (`entry_type: "stop"`, and every stop-loss) fills when the bar
-trades through the trigger:
-
-- If the bar opens beyond the trigger, it fills at the **open**. A gap
-  through a stop-loss is filled at the gap, so a stop does not cap the loss
-  at its own price. This is the single most common way a backtested loss
-  turns out larger than "risk per trade".
-- Otherwise, if the bar's range reaches the trigger, it fills exactly at the
-  trigger price.
-
-There is no partial filling. An order fills completely or not at all, and
-the size available is never questioned.
+Market entries match the next eligible open. Resting limits match a favorable
+open, otherwise their touched limit. Stops match a gap-through open, otherwise
+the touched trigger. A stop is not a guarantee of maximum loss.
 
 ### Fixed spread and slippage
 
-For a reference price `p`, buy/sell sign `s = +1/-1`:
-
-```
-adjustment = p * (spread_bps / 2 + slippage_bps) / 10000
-fill       = p + s * adjustment
-```
-
-The implementation uses the equivalent `p * (1 + s * fraction)`. Both cost
-components use the reference; they do not compound. A gap changes `p` first:
-a long's stop at 90 with the next open at 85 uses 85 before costs, not 90.
-The ledger's reference is the matched price, not the earlier signal price.
-Configured costs therefore exclude the signal-to-open move and the stop gap.
-
-| Order behavior | Cost application, for entries and exits |
-|---|---|
-| Market | Full adverse adjustment at next open |
-| Stop, gap through trigger | Full adverse adjustment at open |
-| Stop, intrabar trigger touch | Full adverse adjustment at trigger |
-| Take-profit, any touch | Full adverse adjustment; never capped at the target |
-| Entry limit, favorable open | Adverse adjustment capped at the limit |
-| Entry limit, exact touch | Zero adjustment; fill remains at limit |
-
-A take-profit is modelled as a **market-on-touch** order, matching the venue
-order type a Koval sandbox or live session actually places
-(`TAKE_PROFIT_MARKET`). It pays the full adverse adjustment and is never
-capped at the target. Treating it as a free limit touch was optimistic: it
-assumed a resting order that filled at its own price at no cost.
-
-Buy **entry** limits never fill above the limit; sell entry limits never fill
-below it. When the limit caps an adjustment, allocate the **actual** cost
-between spread and slippage in their configured proportions. This includes
-zero cost on a limit touch; it is not a claim of observed liquidity or maker
-status. Each fill record carries `koval_role` (`entry`, `stop_loss`,
-`take_profit`) so the two rules are distinguishable in the ledger.
-
-Market and stop adjusted prices can fall outside the candle's high/low. They
-are synthetic cost prices, explicitly disclosed in metadata. Capping at the
-range can erase assumed costs on flat bars and would use a completed bar's
-extremes to price its open. The model does not infer quotes from that range.
-No random number, future bar, volatility measure or volume is used to compute
-the adjustment. Matching still uses the current OHLC to detect triggers.
-
-The adjusted price goes into the broker before commission, cash, position,
-equity and trade notifications are calculated. Costs are not subtracted again
-by an analyzer. Submission cash checks are hypothetical and produce no cost
-records; an actual fill can still be rejected if its adjusted notional and
-commission exceed available cash. This is Backtrader cash accounting, not a
-venue margin model.
+For reference `p` and buy/sell sign `s=+1/-1`, costed fills use
+`p * (1 + s * (spread_bps / 2 + slippage_bps) / 10000)`.
+Entry limits remain bounded by their limit. Take-profits are market-on-touch
+and pay the full adjustment. Synthetic cost prices can exceed candle ranges.
+V2 may then round entry prices to the supplied instrument tick. Signed price
+adjustment records a favorable rounding as a benefit rather than a debit.
 
 ## Brackets, and the OCO patch
 
-When an entry fills, the adapter places two exit orders sized to the filled
-position: a stop-loss (stop order) and a take-profit (limit order) joined as
-an OCO pair, with the stop as the group leader. Filling or cancelling either
-leg cancels the other.
+The global Backtrader patch prevents sibling double fills and cancels submitted
+as well as pending siblings. V2 retains and resizes both legs after a partial
+exit; a complete exit cancels its sibling. It does not delegate historical
+matching to `PaperBroker`. Treat a Backtrader upgrade as a source-review event.
 
-If the strategy supplied no `take_profit`, one is derived from the fill
-price and the stop distance using the adapter's `risk_reward_ratio`
-parameter (default 2.0).
-
-Stock Backtrader has a bug here. It evaluates OCO cancellation *after*
-execution, so on a bar whose range covers both the stop and the target, both
-legs can fill — closing the position twice and inventing a trade that never
-happened. `oco_patch.py` fixes it by tracking which OCO groups have already
-completed within the current bar and cancelling the sibling before it can
-execute. The patch is applied at import of `backtest_runner`, globally, to
-`backtrader.brokers.bbroker.BackBroker`.
-
-The consequence you should know about: **on an ambiguous bar, whichever leg
-the broker reaches first wins.** The queue order decides, not the price
-path, because a bar carries no information about the order in which its high
-and low were reached. Treat any strategy whose results depend on ambiguous
-bars as unproven. Widening the stop or the target until the two cannot be
-reachable in the same bar is a cheap way to test whether that is happening.
+If both protection levels are touched, v2 selects the stop. Its ambiguity
+record includes local stop/target reference PnL for the full current position,
+before fees, funding and liquidity limits. These alternatives describe one bar;
+they are not optimistic/pessimistic bounds on the strategy's total return.
 
 ## Moving a stop or a target
 
-Every bar with an open position — except the bar the entry filled on, and
-except a bar on which the stop order is no longer live — the adapter asks the
-strategy for `on_sl_update(trade_id)` and `on_tp_update(trade_id)`. Returning
-`None` keeps the current level; returning a price moves it.
-
-A move rebuilds the whole bracket: the adapter snapshots both target prices,
-cancels the stop once, and re-places both legs as a fresh OCO pair. It has
-to work this way because cancelling the group leader cascades to the
-sibling, so a naive "cancel the stop, then re-place it" silently drops the
-take-profit. `tests/test_bt_adapter.py::test_take_profit_survives_trailing_stop_update`
-is the regression test, and it exists because that bug shipped once.
-
-Nothing validates the direction of a move. A strategy that trails a long's
-stop *downwards* will be obeyed.
+Both hooks run after broker processing, including on the entry-fill bar.
+The final pair must be finite and positive, ordered stop < target for a long
+and target < stop for a short. A stop cannot widen risk. Profit locks are
+allowed. Invalid replacements fail before cancellation; valid replacements
+rebuild the OCO pair and update a carried entry remainder. With instrument
+evidence, replacement prices are normalized before final validation.
 
 ## Position sizing
 
-If the strategy's `TradeSetup` carries an explicit `size`, that size is used
-verbatim. Graph strategies always do — the `risk.pct_risk` block computes it.
+Explicit strategy size is the requested quantity. Missing size uses the engine
+risk sizer and margin cap. V2 revalidates the stop-risk budget at the actual
+entry price, including entry/exit fee assumptions and adverse stop costs.
+Instrument quantity steps apply after both risk and volume caps. A resulting
+entry below minimum quantity/notional is rejected as `instrument_constraint`.
+V2 invalid prices, sizes, entry types and brackets fail loudly.
 
-Otherwise the adapter falls back to the engine's risk sizer:
-
-```
-risk_amount = account_value * risk_per_trade / 100
-size        = risk_amount / |entry_price - stop_loss|
-size        = min(size, account_value * leverage / entry_price)
-```
-
-The second line is a margin cap, and it bites more often than people expect:
-a tight stop produces a large risk-based size, and the cap silently reduces
-it, so the trade risks less than the configured percentage. Sizes of zero or
-less are dropped without an order.
-
-Leverage changes the cap only. It does not change what a stop-out costs,
-because that is a function of price distance.
+`risk_at_entry`, `actual_risk` and the legacy account `position.risk_amount`
+are diagnostics based on the configured fixed costs; they are estimates when
+historical fees or calibrated impact override those costs. Actual charged fees
+and fills are authoritative in the execution ledger. Profit locks report zero
+capital at risk when their estimated net stop outcome is positive.
 
 ## Fees
 
-Legacy commission is charged only when `EngineRunSpec.execution_config` is non-empty.
-With no execution config the run is fee-free, deliberately, so unit tests can
-assert on raw price action.
-
-Fees resolve through the engine's `resolve_execution_settings()`, which maps
-a venue to a taker rate and hands the broker a single percentage commission
-applied to both sides of the trade. The historical compatibility defaults:
-
-| Venue | Maker | Taker | Broker rate used |
-|---|---|---|---|
-| `binance` / `spot` | 10 bps | 10 bps | 0.10% |
-| `binance` / `future` | 2 bps | 4 bps | 0.04% |
-| anything else | 0 | 0 | 0% |
-
-Worked example, from the sample data: a long of 40.504 units filled at
-123.4434 is a notional of exactly 5000, so entry costs 2.00. It exits at
-128.381136, a notional of 5200, costing 2.08. The trade record shows
-`commission: 4.08`, and `realized_pnl` is already net of it.
-
-This matters when comparing runs: `koval backtest` always passes an
-execution config (`--exchange binance`, futures), so the CLI charges fees.
-`load_backtest_engine().run(spec)` with a bare `EngineRunSpec` does not. The
-same graph and the same candles will produce different numbers through the
-two paths, and neither is wrong.
-
-These constants are not a current or historical account-specific fee schedule.
-The new model instead requires `commission_bps` and charges
-`abs(filled_size) * actual_fill_price * commission_bps / 10000` on every fill,
-including limits. This **uniform fee assumption** does not classify makers
-and takers. OHLCV cannot establish whether an order actually added liquidity;
-maker/taker fees and discounts remain unavailable. Exact treatment requires
-historical fee and execution evidence; see the
-[research and follow-up plan](execution-research.md).
+V1 uses a uniform fee; v2 can take `fee_schedule: FeeScheduleEvidence` with
+maker/taker rates, interval, currency, tier, discount treatment and provenance.
+A resting entry limit is *assumed* maker, other fills taker. OHLCV cannot prove
+actual liquidity provision. Historical evidence must cover each charged fill;
+current snapshots and configured rates remain approximations as labelled by
+the engine. Fee evidence overrides configured fees in affordability checks too.
+Only quote currency or the selected symbol's quote asset is accepted. Discount
+rates must already incorporate the supplied treatment. Cross-asset conversion
+is unsupported and is never hidden in slippage.
 
 ## Accounting, leverage and affordability
 
-`ohlcv_fixed_v1` accepts an optional `leverage` (default 1, range [1, 125]).
-Cash accounting is **linear**: an entry debits `notional / leverage` of cash,
-and equity is cash plus the position marked at the current close. The
-alternative futures-style mode (`stocklike=False` with `automargin`) reaches
-the same final value but marks the margin at the current price, which
-overstates open profit in the equity curve and corrupts drawdown; it is
-deliberately not used.
+A shared append-only broker ledger is the account's source of cash, gross trade
+PnL, fees and funding. Cached totals keep snapshots O(1) in trade count.
+Margin is entry notional / leverage; free margin is equity minus used margin.
+Both costed profiles check both directions at submission and at actual fill.
+Legacy retains Backtrader's historical cash behavior.
 
-Before an entry is submitted the adapter applies one symmetric rule:
+`funding: FundingSeries` requires complete perpetual coverage. Signed payments
+use archived settlement mark prices, before orders at that timestamp, against
+the position held before those orders. Missing coverage fails even when flat.
+Funding remains separate from trade price PnL and commission. Empty-series
+coverage is a caller assertion under the engine's normalized contract.
 
-```
-notional / leverage + commission <= equity - margin_already_used
-```
+`instrument_specs` selects time-valid tick/step/minimum/price-band evidence.
+`mark_prices: MarkPriceSeries` additionally enables the engine's single-position
+cross-margin maintenance calculation and liquidation fee. Marks must cover
+every primary bar. Funding precedes liquidation; liquidation precedes protection
+and bypasses the OHLCV volume cap. Only linear base-quantity contracts with
+contract size 1 and quote-asset collateral are supported. This is a normalized subset of venue rules,
+not a claim that all historical exchange filters are represented.
 
-If it does not hold, no order is sent and `ORDER_REJECTED` is emitted with
-reason `insufficient_margin`. The strategy is not halted — it may size a
-smaller entry on a later bar. The rule exists in the adapter because
-Backtrader's own cash check never applies to a short (`shortcash` credits the
-proceeds), so without it a short could exceed leverage silently. Backtrader's
-long-only check remains as a backstop and, when it rejects an order, that
-arrives as `ORDER_REJECTED` too.
-
-Exit legs are submitted with `_checksubmit=False`. A closing order never needs
-cash, and Backtrader's submit-time pseudo-execution runs both OCO legs against
-one running cash figure — which used to margin-reject the take-profit of a
-short whose notional approached the balance and, through the OCO link, cancel
-its stop, leaving an unprotected position to the end of the data. This applies
-to **every** model, `legacy_v1` included: it corrects an artefact, not a
-documented semantic.
+`execution_proxy: ExecutionProxyConfig` enables partial fills, a shared
+`volume * maximum_volume_participation` budget, carry/cancel entry remainder
+policy, and timeline delays. Only actual quantities consume the budget.
+Protection is resized to residual exposure. Calibrated impact uses only
+calibration strictly before the decision; without calibration, fixed slippage
+remains. Decision/submission/acknowledgement/fill/protection delays are checked
+at primary-bar boundaries. Nonzero cancellation and replacement delays are
+refused: they require a further lifecycle contract.
 
 ## Drawdown cut-off
 
-The `max_drawdown` adapter parameter (percent, off by default) is checked
-after every closed trade. Breaching it emits `DRAWDOWN_LIMIT_HIT`, calls
-`cerebro.runstop()`, and stops the strategy from acting on any further bar.
-
-Note that it is evaluated on realised equity after a close, not continuously,
-so an open position can be far deeper underwater than the limit without
-tripping it.
+The optional adapter `max_drawdown` gate is checked after a closed trade. It is
+not a continuous intrabar risk control. Daily PnL uses the previous bar's equity
+as the next UTC day's baseline, following engine account semantics.
 
 ## What is not modelled
 
-Say this out loud before quoting a result to anyone:
-
-- **No observed spread or order-book slippage.** Legacy has no price
-  adjustment. `ohlcv_fixed_v1` adds only the specified fixed costs, with no
-  volatility, size-dependent impact, depth or queue model.
-- **No funding or borrow costs.** There is no funding producer. The runner
-  reports `funding_adjustment: 0.0` and discloses funding as `unavailable`;
-  zero booked cashflow does not mean a historical rate was zero. Supplying
-  any funding series, even empty or zero, is unsupported and rejected in the
-  versioned config. The future implementation needs aligned historical rates
-  and settlement mark prices, never present-day rates.
-- **No partial fills and no liquidity limits.** Size is whatever the sizer
-  says, and the market always absorbs it.
-- **No liquidation, no margin calls, no maintenance margin.** Leverage
-  affects the sizing cap and nothing else.
-- **No extra latency, exchange tick/lot/notional filters, venue rejections or downtime.**
-  The explicit extra delay is zero; next-bar matching and delayed protection
-  still apply. Backtrader's own insufficient-cash rejection remains active.
-- **One position at a time.** The adapter enters only when flat, so there is
-  no pyramiding, no hedging, and no portfolio of concurrent positions.
-- **One instrument.** Multiple feeds are timeframes of the same instrument,
-  not different symbols.
-- **No maker/taker classification.** Legacy uses the resolved taker rate;
-  v1 uses the explicit uniform rate. Neither knows whether a fill added liquidity.
-
-These omissions can bias results in different directions. Neither model is
-a guaranteed upper or lower performance bound. Ambiguous bars, funding credits
-and changed order eligibility alone defeat such a claim. Every deferred effect
-has required inputs, an owner and acceptance criteria in the
-[decision record](execution-research.md#staged-follow-up-and-acceptance-criteria).
+Depth, queue priority, observed bid/ask, exchange downtime, borrow interest,
+portfolio/isolated margin, inverse/delivery contracts, currency conversion,
+full venue filter sets and actual intrabar price paths remain unsupported.
+A volume/impact model is an OHLCV proxy even with archived calibration.
+The plugin has no credentials, network order route or live trading loop.
 
 ## Determinism and look-ahead
 
-Two runs of the same spec in the same process return identical results, trade
-ids included: the adapter holds no global mutable state between runs and adds
-no randomness.
+Costed input validation checks positive finite capital, shape `(N,6)`, coherent
+positive prices, finite values, non-negative volume and increasing integer
+timestamps. V2 additionally requires the engine's aligned contiguous streams.
+At most two timeframes for one instrument are supported. Higher-timeframe
+candles are visible only when
+`htf_open + htf_duration <= primary_open + primary_duration`.
+History defaults to the engine's `DEFAULT_HISTORY_BARS` (1000).
 
-`ohlcv_fixed_v1` validates positive finite initial capital, non-empty `(N, 6)`
-feeds, finite OHLCV, positive coherent prices, non-negative volume, and unique
-increasing integer millisecond timestamps. Prices, quantities and notionals
-must remain finite during execution. These structural checks do not prove
-historical completeness, correct symbol/market selection, absence of data
-gaps, or sufficient strategy warmup. The caller owns that provenance.
-
-Scalar state comes from index `[0]`, and history arrays end at the current
-feed bar. The single-feed test
-`tests/test_bt_adapter.py::test_strategy_never_sees_future_bar` checks that
-later rows do not enter that window. It does not establish that a current
-higher-timeframe bar has finished forming.
-
-**Higher-timeframe availability.** A higher-timeframe bar is injected only
-once it has closed before the primary bar's decision:
-
-```
-htf_open + htf_duration <= primary_open + primary_duration
-```
-
-Candles are timestamped at their opening time, so without this rule the
-adapter exposed a forming HTF bar's final OHLCV — a bar revealing its own
-future. The rule applies to **both** execution models; the previous behavior
-was a defect, not a semantic. A second feed therefore requires
-`primary_timeframe_ms` and `htf_timeframe_ms`, and the runner derives them
-from the feed timeframes; the higher timeframe must be a whole multiple of the
-primary.
-
-Until the first higher-timeframe bar has closed, `htf_closes` and its siblings
-stay `None` — the same "unavailable" value a single-feed run injects, not an
-empty array. A strategy that guards with `if self.htf_closes is None` therefore
-behaves identically during warm-up and with no higher-timeframe feed at all.
-
-Only trailing rows can still be forming, so the scan stops at the first closed
-bar and reads only the rows it injects. Injection cost is bounded by
-`history_bars`, not by the length of the higher-timeframe feed.
-
-Timeframe durations are resolved with `koval.engine.timeframe_utils`, which
-understands minute, hour, day and week labels — `30m`, `2h` and `1w` included.
-A label it cannot resolve is refused rather than treated as a sentinel
-duration. Durations are required only when a second feed is present, so a
-single-feed run accepts any label the engine will order.
-
-Regression coverage:
-`tests/test_bt_adapter_htf.py::test_htf_bar_is_visible_only_after_it_closes`,
-`::test_mutating_an_unfinished_htf_bar_does_not_change_earlier_inputs`,
-`::test_htf_arrays_stay_none_until_the_first_bar_has_closed` and
-`::test_htf_injection_never_reads_the_whole_higher_timeframe_history`.
-
-**One history window.** `history_bars` defaults to
-`koval.engine.history_window.DEFAULT_HISTORY_BARS` (1000), the same window a
-paper session injects, so a warmup-sensitive indicator cannot disagree between
-the two runtimes.
-
-**One timestamp conversion.** Under `ohlcv_fixed_v1`, events, the execution
-ledger and the state injected into the strategy all go through
-`time_conversion.utc_ms`, which treats a naive datetime as UTC and rounds to
-the nearest millisecond. Legacy keeps the old truncating conversion for
-reproduction. Regression coverage:
-`tests/test_execution_realism.py::test_v1_event_ledger_and_strategy_timestamps_agree_at_millisecond_offsets`.
-
-The look-ahead that no test can prevent is the one in your own head —
-choosing a strategy, a symbol, or a date range because you already know how
-it turned out. That one is on you.
+V1/v2 events and fill timestamps use nearest-millisecond UTC conversion.
+Legacy event epochs retain the old host-timezone-sensitive conversion for
+replay. Identical inputs and software give deterministic results and run-local
+IDs. Caller archives, warmup adequacy and strategy selection bias remain
+outside these structural checks.
 
 ## Reading a result honestly
 
-- Compare against a benchmark you would actually have held, not against zero.
-- Check `total_trades` before anything else. Under a few dozen closed trades,
-  `win_rate` and `profit_factor` are noise.
-- `max_drawdown` is computed from bar-close equity, so intra-bar pain is
-  invisible and the real figure is worse.
-- Run the same graph on a period you did not use while developing it. If it
-  falls apart, you fitted the period, not the market.
+Closed-trade statistics exclude an unfinished position; final equity marks it
+at the last close without an exit fee. Paper session finalization flattens it,
+so terminal policies must match before comparing totals. Bar-high/low excursion
+diagnostics may include prices before entry or after exit and are not lower
+bounds on actual experienced MAE/MFE. Read raw fills, sample size and out-of-sample
+results alongside aggregate statistics.
 
 ## See also
 
-- [results.md](results.md) — every field this package returns.
-- [architecture.md](architecture.md) — where in the code each rule lives.
-- [troubleshooting.md](troubleshooting.md) — when the numbers look wrong.
+- [results.md](results.md) — result fields and reconciliation.
+- [execution-validation.md](execution-validation.md) — tests, review and known gaps.
+- [execution-research.md](execution-research.md) — primary sources and decisions.
