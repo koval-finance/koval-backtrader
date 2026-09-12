@@ -39,6 +39,7 @@ dependencies = [
 dev = [
     "build>=1.2",
     "pytest>=8.1",
+    "PyYAML>=6.0",
     "ruff>=0.4",
     "setuptools>=68",
     "twine>=5.1",

@@ -76,7 +76,9 @@ jobs:
       - name: Download the exact engine wheel
         env:
           ENGINE_VERSION: ${{ matrix.engine-version }}
-        run: python -m pip download --no-deps --only-binary=:all: "koval-engine==$ENGINE_VERSION" -d data_cache/pair-wheels
+        run: >-
+          python -m pip download --no-deps --only-binary=:all:
+          "koval-engine==$ENGINE_VERSION" -d data_cache/pair-wheels
       - name: Verify installed artifacts and the complete suite
         run: python scripts/verify_pair.py --engine data_cache/pair-wheels/*.whl --plugin dist/*.whl --output data_cache/pair-acceptance.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

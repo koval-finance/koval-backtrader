@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+import yaml
+
 ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 MIRROR_WORKFLOW = ROOT / ".github" / "workflows" / "mirror.yml"
@@ -17,6 +20,16 @@ SCORECARD_WORKFLOW = ROOT / ".github" / "workflows" / "scorecard.yml"
 
 def _workflow_text() -> str:
     return WORKFLOW.read_text(encoding="utf-8")
+
+
+def test_github_workflows_are_valid_yaml():
+    workflows = ROOT / ".github" / "workflows"
+    paths = sorted((*workflows.glob("*.yml"), *workflows.glob("*.yaml")))
+    for path in paths:
+        try:
+            yaml.safe_load(path.read_text(encoding="utf-8"))
+        except yaml.YAMLError as error:
+            pytest.fail(f"invalid workflow YAML in {path.relative_to(ROOT)}: {error}")
 
 
 def test_release_build_runs_all_quality_gates_before_artifact_upload():
