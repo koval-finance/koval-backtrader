@@ -76,6 +76,9 @@ src/koval_backtrader/
 ├── execution_evidence.py normalized evidence transport and validation
 ├── evidence_execution.py funding, fees and actual cashflows
 ├── strategy_account.py graph account binding for engine 0.11
+├── runtime_boundaries.py optional MIT warmup/evaluation boundaries
+├── terminal_execution.py explicit terminal policy without another candle
+├── execution_trace.py   persisted decision/order/fill/account links
 └── oco_patch.py         guard against a Backtrader OCO ghost-trade bug
 ```
 

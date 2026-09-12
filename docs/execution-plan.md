@@ -94,10 +94,11 @@ directions, limits, stop gaps, OCO, cash rejection, open-at-end and repeated
 runs are covered, as is corrected higher-timeframe behaviour, without cheat
 modes.
 
-There is no separate evaluation or warm-up window in the current spec: warm-up
-candles are not prepended and then silently traded on. An explicit window, or
-a required historical-series contract, needs engine and plugin agreement
-first. Until then a caller records the history it actually supplied.
+The original v1 readiness scope had no separate evaluation or warmup window.
+Version 0.12 now accepts the optional MIT runtime-boundaries contract:
+preroll populates history without trading, and evaluation uses explicit account
+baselines and terminal policy. See [runtime-assurance.md](runtime-assurance.md).
+Calls without that contract retain their original full-input behavior.
 
 ## 4. Deferred effects remain separate versions
 

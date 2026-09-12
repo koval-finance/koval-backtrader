@@ -6,6 +6,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.0] - Unreleased
+
+### Added
+
+- Optional MIT runtime boundaries: separate non-trading preroll and evaluation,
+  initial account/risk baselines, close-time decisions and explicit retain/flatten
+  terminal policies. Engine 0.12 protocol 2 is required for this opt-in contract.
+- Persisted costed-run audit linking decisions, intents, orders, fills, events,
+  ledger movements, per-decision account snapshots and the final open position.
+- Applied evidence hashes/rules and separate model-quality labels on fills.
+- Full-runtime comparisons including partial terminal exits; public runtime
+  fixtures, future-input mutation tests and an independent Decimal cash oracle.
+- Exact-wheel acceptance command and CI matrix across engine 0.11.1/0.12.0
+  and Python 3.11/3.13. Manifests identify artifacts and the verification suite.
+
+### Fixed
+
+- Refuse mismatched fee market context, malformed typed evidence and uncovered
+  evaluation periods before session start. Worker JSON/pickle transport keeps
+  capability requests and normalized evidence intact.
+- Continue primary strategy callbacks before a later secondary feed starts.
+  Session-start timestamps no longer read preloaded future data.
+- Start submission latency at the decision's close time when explicit runtime
+  boundaries are supplied, matching actual GraphStrategy/LiveEngine decisions.
+- Export actual remaining protective quantities after partial OCO exits,
+  including sibling resizing that emits no separate order notification.
+- Correct the HTF buffer offset after skipping a forming row: a positive offset
+  could expose later preloaded HTF candles instead of the last closed history.
+  Explicit runtime boundaries also align HTF history with the rolling primary
+  window and defer entries until completed HTF data is available.
+
+The engine dependency range is now `>=0.11.0,<0.13.0`; the older graph binding
+fallback remains. Legacy result shape and default terminal behavior are preserved.
+This is an unpublished candidate and no exchange-execution certification.
+
 ## [0.11.1] - 2026-09-12
 
 ### Changed

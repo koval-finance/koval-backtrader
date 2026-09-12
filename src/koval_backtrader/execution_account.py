@@ -148,9 +148,13 @@ class ExecutionAccount:
         adjustment_fraction: float = 0.0,
         ledger: AccountLedger | None = None,
         funding_status: str = FUNDING_STATUS_UNAVAILABLE,
+        daily_baseline_equity: float | None = None,
+        peak_equity: float | None = None,
     ) -> None:
         self._state = PlatformAccountState(
             starting_balance=starting_balance,
+            daily_baseline_equity=daily_baseline_equity,
+            peak_equity=peak_equity,
             ledger=ledger if ledger is not None else IncrementalAccountLedger(starting_balance),
         )
         self._owns_ledger = ledger is None

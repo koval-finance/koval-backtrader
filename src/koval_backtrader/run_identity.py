@@ -169,6 +169,7 @@ def build_run_identity(
     implementation_sha256,
     initial_capital,
     consumed_bars,
+    boundaries=None,
 ) -> dict:
     """Everything needed to prove which inputs produced this result."""
     fingerprints = feed_fingerprints(feeds, durations)
@@ -192,11 +193,18 @@ def build_run_identity(
         },
     }
     timeframe = ordered_timeframes[0]
-    consumed = feeds[timeframe][:consumed_bars]
+    preroll_count = (
+        0
+        if boundaries is None
+        else int(np.count_nonzero(feeds[timeframe][:, 0] < boundaries.evaluation_start_ms))
+    )
+    consumed = feeds[timeframe][preroll_count : preroll_count + consumed_bars]
     canonical = True
     try:
         primary = CandleStreamIdentity(timeframe)
         warmup = CandleStreamIdentity(timeframe)
+        for row in feeds[timeframe][:preroll_count]:
+            warmup.append(row)
         for row in consumed:
             primary.append(row)
         primary_record, warmup_record = primary.as_dict(), warmup.as_dict()
@@ -228,13 +236,18 @@ def build_run_identity(
         execution_evidence=model.execution_evidence.manifest(),
         strategy_sha256=graph_sha256(graph),
         run_parameters={
+            **({"runtime_contract": boundaries.as_dict()} if boundaries is not None else {}),
             "initial_capital": float(initial_capital),
             "max_window": int(history_bars),
             "higher_timeframe": ordered_timeframes[1] if len(ordered_timeframes) > 1 else None,
             "requires_higher_timeframe": len(ordered_timeframes) > 1,
-            "daily_baseline_equity": None,
-            "peak_equity": None,
-            "end_of_data_policy": "mark_at_last_close",
+            "daily_baseline_equity": None
+            if boundaries is None
+            else boundaries.daily_baseline_equity,
+            "peak_equity": None if boundaries is None else boundaries.peak_equity,
+            "end_of_data_policy": "mark_at_last_close"
+            if boundaries is None
+            else boundaries.end_of_data_policy,
         },
         engine_version=version("koval-engine"),
         execution_mode="paper",

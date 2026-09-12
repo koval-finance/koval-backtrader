@@ -8,6 +8,7 @@ below matches what you are doing.
 | Run my first backtest | [getting-started.md](getting-started.md) |
 | Understand what a result means | [results.md](results.md) |
 | Know whether I can trust the numbers | [execution-model.md](execution-model.md) |
+| Align runtime windows and inspect execution evidence | [runtime-assurance.md](runtime-assurance.md) |
 | Inspect cost-model research and follow-ups | [execution-research.md](execution-research.md) |
 | Audit execution tests and reconciliation | [execution-validation.md](execution-validation.md) |
 | Review timing fixes and deferred effects | [execution-plan.md](execution-plan.md) |

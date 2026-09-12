@@ -219,7 +219,11 @@ before it can execute.
 
 ## Compatibility
 
-Requires Python 3.11+ and `koval-engine>=0.11.0,<0.12.0`. The upper bound
+The [runtime assurance guide](docs/runtime-assurance.md) covers explicit
+warmup/evaluation windows, terminal policies, persisted audit links and
+verification of exact installed wheel pairs.
+
+Requires Python 3.11+ and `koval-engine>=0.11.0,<0.13.0`. The upper bound
 tracks the engine's backtest protocol version; when the engine raises it,
 this package needs a release rather than a looser pin.
 

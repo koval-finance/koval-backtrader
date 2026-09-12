@@ -153,6 +153,13 @@ bar. Account snapshots cost O(1) in ledger length; the full ledger is exported
 at session end. Paired acceptance and model limits are in
 [../docs/execution-validation.md](../docs/execution-validation.md).
 
+The optional 0.12 path is separated into `runtime_boundaries.py` (validate and
+slice the MIT contract) and `terminal_execution.py` (finish through actual
+broker notifications without another candle). `execution_trace.py` records
+decision inputs and run-local links and exports authoritative broker/account
+state; it never computes cash. Both costed profiles export the audit in metrics.
+See [../docs/runtime-assurance.md](../docs/runtime-assurance.md).
+
 ## Update this file when
 
 A module gains or loses a responsibility, the run flow changes shape, or the

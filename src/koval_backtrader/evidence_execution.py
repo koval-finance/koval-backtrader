@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from koval.engine.fee_evidence import FeeScheduleEvidence, resolve_fee_application
 from koval.engine.funding import funding_cashflow
+from koval.engine.run_identity import content_sha256
 
 from koval_backtrader.execution_account import IncrementalAccountLedger
 from koval_backtrader.time_conversion import num2utc_ms
@@ -64,6 +65,9 @@ class EvidenceExecution:
                     "rate": str(record.rate),
                     "mark_price": str(record.settlement_mark_price),
                     "source": record.source,
+                    "evidence_sha256": content_sha256(record),
+                    "rule": "signed_position_at_settlement_before_orders",
+                    "trade_id": broker._execution_trade_id,
                 },
             )
             self.funding_entries.append(asdict(entry))
@@ -72,13 +76,14 @@ class EvidenceExecution:
     def record_fill(self, fill, *, entry_price):
         if fill["role"] == "exit":
             sign = 1 if fill["side"] == "sell" else -1
-            self.ledger.record(
+            entry = self.ledger.record(
                 timestamp_ms=fill["timestamp_ms"],
                 kind="trade_pnl",
                 amount=sign * fill["size"] * (fill["fill_price"] - entry_price),
                 reference_id=str(fill["fill_id"]),
             )
-        self.ledger.record(
+            fill["cashflow_sequences"].append(entry.sequence)
+        entry = self.ledger.record(
             timestamp_ms=fill["timestamp_ms"],
             kind="commission",
             amount=-fill["commission"],
@@ -86,3 +91,4 @@ class EvidenceExecution:
             currency=fill["fee_currency"],
             metadata={"fee_evidence_id": fill["fee_evidence_id"]},
         )
+        fill["cashflow_sequences"].append(entry.sequence)

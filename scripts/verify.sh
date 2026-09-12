@@ -4,8 +4,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-PYTHON=python3
-if [ -x .venv/bin/python ]; then
+PYTHON="${KOVAL_VERIFY_PYTHON:-python3}"
+if [ -z "${KOVAL_VERIFY_PYTHON:-}" ] && [ -x .venv/bin/python ]; then
     PYTHON=.venv/bin/python
 fi
 

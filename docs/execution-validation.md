@@ -1,4 +1,60 @@
-# Execution validation and 0.11 release review
+# Execution validation and release review
+
+## 0.12 runtime assurance
+
+Prepared 2026-09-12 for the unpublished plugin 0.12.0 candidate. The optional
+runtime contract requires engine 0.12.0; ordinary runs retain engine 0.11
+compatibility. See [runtime-assurance.md](runtime-assurance.md) for the public
+contract, audit fields, assumptions and exact-wheel verification command.
+
+| Plan item | Plugin implementation and evidence |
+|---|---|
+| BT-01 | Explicit preroll/evaluation boundaries, initial account baselines, both terminal policies; real graph callbacks, every AccountSnapshot field, daily rollover and open exposure in `test_runtime_boundaries.py` |
+| BT-02 | Actual GraphStrategy/LiveEngine comparisons including HTF, partial execution, instruments and nonzero submission latency; public installed-engine fixtures and a separate Decimal cash/equity oracle |
+| BT-03 | Public EngineRunSpec typed/JSON/pickle transport, capability refusals, market context and evaluation coverage in `test_evidence_transport.py`; applied evidence hashes and rules on fills/ledger |
+| BT-04 | Persisted decisions, intents, order/fill IDs, cashflow sequences and residual exposure in `test_execution_trace.py`; accounting remains in the broker ledger |
+| BT-05 | Future candle/funding/mark mutation and session-clock regressions in `test_execution_causality.py`; HTF offset/window regressions and completed-volume approximation disclosure |
+| BT-06 | Exact-wheel discovery/byte checks and the full verification gate through a clean interpreter in `scripts/verify_pair.py`; existing wheel/sdist guards retained |
+
+The HTF regressions exposed an existing forward buffer-offset error after a
+forming row was skipped. The corrected offset applies to all profiles. Explicit
+boundaries additionally align the HTF history window and first eligible entry
+with paper. Nonzero submission-delay tests also exposed an opening-time versus
+decision-close clock mismatch; the explicit runtime path now uses decision close.
+These regressions were observed failing before their implementation fixes.
+
+The evidence transport tests exercise the public spec used by application
+workers. They do not claim end-to-end application request/UI/archive integration;
+those APP tasks belong to koval-app. No sibling application imports or engine
+source edits are part of this implementation. Hosted CI and publication remain
+separate from local candidate acceptance.
+
+### Exact installed-pair results
+
+All four clean installations passed `pip check`, entry-point discovery,
+installed package-byte checks, lint, formatting and the full test suite:
+
+| Engine artifact | Plugin | Python | Suite | Acceptance manifest |
+|---|---|---|---|---|
+| 0.12.0 candidate wheel | 0.12.0 | 3.11.16 | 892 passed, 1 skipped | [Candidate / 3.11](acceptance/2026-09-12/pair-candidate-py311.json) |
+| 0.12.0 candidate wheel | 0.12.0 | 3.13.5 | 893 passed | [Candidate / 3.13](acceptance/2026-09-12/pair-candidate-py313.json) |
+| Published PyPI 0.11.1 wheel | 0.12.0 | 3.11.16 | 892 passed, 1 skipped | [Published / 3.11](acceptance/2026-09-12/pair-published-py311.json) |
+| Published PyPI 0.11.1 wheel | 0.12.0 | 3.13.5 | 893 passed | [Published / 3.13](acceptance/2026-09-12/pair-published-py313.json) |
+
+The existing host-timezone test skips when `time.tzset` is absent, as in this
+standalone Python 3.11 build. No conformance waiver or new skip was introduced.
+On engine 0.11.1, explicit-runtime tests verify refusal of the unavailable
+contract; they do not establish new-contract parity on that version.
+
+Plugin wheel SHA-256:
+`ad1fe62ae0e3c68a3d407d7ba923e12e62d77282575e4314948b17d767016ba7`.
+The manifests also identify both engine wheels, the verification sources and
+every installed dependency. Wheel/sdist source and version gates and strict
+Twine checks passed. The sdist additionally carries this acceptance record;
+the tested wheel remains unchanged. These local macOS results are separate
+from the configured Linux CI matrix and any future published artifact.
+
+## Historical 0.11 acceptance
 
 The original 0.11.0 review below was prepared 2026-09-11 against **published PyPI koval-engine 0.11.0** and
 Backtrader 1.9.78.123. The engine's

@@ -3,17 +3,18 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass, fields, is_dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from types import UnionType
 from typing import get_args, get_origin, get_type_hints
 
 from koval.engine.execution_proxy import ExecutionProxyConfig
-from koval.engine.fee_evidence import FeeScheduleEvidence
+from koval.engine.fee_evidence import FeeScheduleEvidence, resolve_fee_application
 from koval.engine.funding import FundingSeries, build_funding_series
 from koval.engine.instrument_risk import (
     InstrumentSpecEvidence,
     MarkPriceSeries,
     build_mark_price_series,
+    select_instrument_spec,
 )
 from koval.engine.run_identity import execution_evidence_manifest
 
@@ -50,7 +51,11 @@ def _decode(annotation, value):
         return tuple(_decode(get_args(annotation)[0], item) for item in value)
     if is_dataclass(annotation):
         if isinstance(value, annotation):
-            return value
+            value = {
+                f.name: getattr(value, f.name)
+                for f in fields(value)
+                if f.init and f.name != "raw_responses"
+            }
         if not isinstance(value, Mapping):
             raise ValueError(f"execution evidence requires {annotation.__name__} or a mapping")
         allowed = {f.name for f in fields(annotation) if f.init and f.name != "raw_responses"}
@@ -62,7 +67,10 @@ def _decode(annotation, value):
         except TypeError as exc:
             raise ValueError(f"invalid {annotation.__name__}: {exc}") from exc
     if annotation is Decimal:
-        return Decimal(str(value))
+        try:
+            return Decimal(str(value))
+        except InvalidOperation as exc:
+            raise ValueError("execution evidence requires a valid Decimal") from exc
     if annotation in {bool, int, str} and type(value) is not annotation:
         raise ValueError(f"execution evidence requires {annotation.__name__}")
     if annotation is float and (isinstance(value, bool) or not isinstance(value, (float, int))):
@@ -98,6 +106,16 @@ def resolve_execution_evidence(config, *, realistic, market) -> ExecutionEvidenc
     if market is None:
         raise ValueError("execution evidence requires an explicit market identity")
     funding, marks = evidence.funding, evidence.mark_prices
+    fee = evidence.fee_schedule
+    if fee is not None:
+        for name, expected in (
+            ("exchange", market.exchange),
+            ("market", market.market),
+            ("canonical_symbol", market.canonical_symbol),
+        ):
+            actual = getattr(fee, name, None)
+            if actual is not None and actual != expected:
+                raise ValueError(f"fee evidence {name} mismatch")
     for item in (funding, marks, *evidence.instrument_specs):
         if item is None:
             continue
@@ -173,3 +191,21 @@ def resolve_execution_evidence(config, *, realistic, market) -> ExecutionEvidenc
     if fee is not None and fee.currency not in {"quote", quote}:
         raise ValueError("fee currency must match the instrument quote currency")
     return evidence
+
+
+def validate_evidence_coverage(evidence, timestamps):
+    """Reject unusable declared coverage before a session emits any decisions."""
+    funding = evidence.funding
+    for timestamp in timestamps:
+        timestamp = int(timestamp)
+        if (
+            funding is not None
+            and not funding.requested_start_ms <= timestamp <= funding.requested_end_ms
+        ):
+            raise ValueError("funding evidence does not cover the evaluation interval")
+        if evidence.fee_schedule is not None:
+            resolve_fee_application(evidence.fee_schedule, role="taker", timestamp_ms=timestamp)
+        if evidence.instrument_specs:
+            select_instrument_spec(evidence.instrument_specs, timestamp_ms=timestamp)
+        if evidence.mark_prices is not None and evidence.mark_prices.at(timestamp) is None:
+            raise ValueError("mark price evidence must cover every primary bar")

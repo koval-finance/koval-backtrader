@@ -3,6 +3,17 @@
 Dated failure memory. Newest first. Add an entry when a failure costs more
 than a few minutes to understand — the next reader is usually you.
 
+## 2026-09-12 — closed HTF history changes when a future row changes
+
+**Symptom:** after the first HTF close, changing later candles changes previously
+available HTF arrays. The first-close cutoff tests alone still pass.
+**Cause:** `LineBuffer.get(ago=...)` uses positive offsets to read forward.
+Skipping a forming row with `ago=skip` selected later preloaded data.
+**Fix:** use `ago=-skip`, assert history after a closed row is followed by a
+forming row, and mutate future HTF values independently. The fix applies to
+all profiles. Explicit runtime boundaries also align the rolling HTF history
+with the paper runtime and gate entry until required HTF data is available.
+
 ## 2026-08-03 — `NoBacktestEngineError` even though the package is installed
 
 **Symptom:** `load_backtest_engine()` raises `NoBacktestEngineError` listing

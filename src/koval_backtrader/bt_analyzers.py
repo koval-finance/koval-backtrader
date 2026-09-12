@@ -104,6 +104,10 @@ class EquityCurveAnalyzer(bt.Analyzer):
         self.equity_curve = []
 
     def next(self):
+        if not len(self.datas[0]):
+            return
+        if hasattr(self.strategy, "in_evaluation") and not self.strategy.in_evaluation():
+            return
         if getattr(self, "_last_primary_bar", None) == len(self.datas[0]):
             return
         self._last_primary_bar = len(self.datas[0])
@@ -116,3 +120,7 @@ class EquityCurveAnalyzer(bt.Analyzer):
 
     def get_analysis(self):
         return self.equity_curve
+
+    def stop(self):
+        if self.equity_curve:
+            self.equity_curve[-1]["equity"] = self.strategy.broker.getvalue()

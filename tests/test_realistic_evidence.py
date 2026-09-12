@@ -232,7 +232,7 @@ def test_funding_is_a_separate_signed_cashflow_before_orders(monkeypatch, direct
 
 def test_funding_coverage_exhaustion_fails_even_when_flat(monkeypatch):
     funding = build_funding_series(
-        [],
+        [FundingRecord("BTCUSDT", D("0"), START, D("100"), 8 * 3600000, "archive")],
         exchange="binance",
         market="future",
         symbol="BTCUSDT",

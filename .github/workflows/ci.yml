@@ -55,3 +55,33 @@ jobs:
             exit 1
           fi
           echo "All commits are signed off."
+
+  installed-pair:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+        engine-version: ["0.11.1", "0.12.0"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install build
+      - run: python -m build
+      - run: python scripts/check_dist.py --require-artifacts
+      - name: Download the exact engine wheel
+        env:
+          ENGINE_VERSION: ${{ matrix.engine-version }}
+        run: python -m pip download --no-deps --only-binary=:all: "koval-engine==$ENGINE_VERSION" -d data_cache/pair-wheels
+      - name: Verify installed artifacts and the complete suite
+        run: python scripts/verify_pair.py --engine data_cache/pair-wheels/*.whl --plugin dist/*.whl --output data_cache/pair-acceptance.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: pair-${{ matrix.engine-version }}-python-${{ matrix.python-version }}
+          path: data_cache/pair-acceptance.json
+          if-no-files-found: error

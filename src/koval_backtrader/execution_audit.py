@@ -182,6 +182,9 @@ def enrich_closed_trade(record: dict, fills: list[dict]) -> None:
     sign = 1 if entries[0]["side"] == "buy" else -1
     gross = sign * quantity * (exit_price - entry_price)
     record.update(
+        fill_ids=[fill["fill_id"] for fill in fills],
+        order_ids=list(dict.fromkeys(fill["order_id"] for fill in fills)),
+        decision_id=entries[0]["decision_id"],
         entry_price=entry_price,
         exit_price=exit_price,
         size=quantity,

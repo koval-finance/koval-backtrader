@@ -122,6 +122,19 @@ def test_mutating_an_unfinished_htf_bar_does_not_change_earlier_inputs():
     assert a[3] != b[3]
 
 
+def test_forming_htf_row_cannot_replace_previously_closed_history():
+    seen = _run(_hourly(12, [100] * 4 + [200] * 4 + [300] * 4))
+    assert seen[4:7] == [(100.0,)] * 3
+    assert seen[7] == (100.0, 200.0)
+    assert seen[8:11] == [(100.0, 200.0)] * 3
+
+
+def test_future_htf_mutation_preserves_already_available_history():
+    before = _run(_hourly(12, [100] * 4 + [200] * 4 + [300] * 4))
+    after = _run(_hourly(12, [100] * 4 + [500] * 4 + [700] * 4))
+    assert before[:7] == after[:7]
+
+
 def test_a_second_feed_without_declared_timeframes_fails_loudly():
     Adapted = make_bt_strategy_class(_Probe)
     cerebro = bt.Cerebro()

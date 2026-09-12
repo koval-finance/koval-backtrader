@@ -37,10 +37,12 @@ from koval_backtrader.execution_config import (
     REALISTIC_VERSION,
     resolve_execution_model,
 )
+from koval_backtrader.execution_evidence import validate_evidence_coverage
 from koval_backtrader.oco_patch import apply_oco_guard
 from koval_backtrader.realistic_broker import RealisticBroker
 from koval_backtrader.research_metrics import build_research_metrics
 from koval_backtrader.run_identity import build_run_identity
+from koval_backtrader.runtime_boundaries import prepare_runtime
 
 apply_oco_guard()
 
@@ -176,12 +178,17 @@ class BacktraderBacktestEngine:
             raise ValueError("this plugin supports at most two timeframes for one instrument")
         if model.version in COSTED_VERSIONS:
             _validate_fixed_inputs(spec)
+        spec, boundaries = prepare_runtime(spec)
+        if boundaries is not None and model.version not in COSTED_VERSIONS:
+            raise ValueError("runtime boundaries require a costed execution profile")
         if model.version == REALISTIC_VERSION:
             for timeframe, candles in spec.feeds.items():
                 identity = CandleStreamIdentity(timeframe)
                 for row in candles:
                     identity.append(row)
         features = ["run_identity"]
+        if boundaries is not None:
+            features += ["runtime_boundaries_v1"]
         if model.version == REALISTIC_VERSION:
             features += ["same_bar_protection"]
             features += list(model.execution_evidence.as_config())
@@ -192,12 +199,15 @@ class BacktraderBacktestEngine:
                 features=tuple(features),
             ),
         )
-        if model.execution_evidence.mark_prices is not None:
-            marks = model.execution_evidence.mark_prices
+        if model.version == REALISTIC_VERSION:
             primary = spec.feeds[ordered_timeframes(list(spec.feeds))[0]]
-            if any(marks.at(int(row[0])) is None for row in primary):
-                raise ValueError("mark price evidence must cover every primary bar")
+            if boundaries is not None:
+                primary = primary[primary[:, 0] >= boundaries.evaluation_start_ms]
+            validate_evidence_coverage(model.execution_evidence, primary[:, 0])
         metadata = execution_metadata(model)
+        if boundaries is not None:
+            metadata["runtime_contract"] = boundaries.as_dict()
+            metadata["assumptions"]["end_of_data"] = boundaries.end_of_data_policy
         metadata["negotiated_capabilities"] = {
             "execution_contract_version": negotiated.execution_contract_version,
             "features": list(negotiated.features),
@@ -217,6 +227,7 @@ class BacktraderBacktestEngine:
                 )
         else:
             durations = {tf: _optional_timeframe_ms(tf) for tf in timeframes}
+        primary_ms = durations[timeframes[0]]
         strategy = assemble_from_graph(spec.graph)
         bt_cls = make_bt_strategy_class(
             type(strategy),
@@ -225,6 +236,7 @@ class BacktraderBacktestEngine:
             primary_timeframe_ms=primary_ms,
             htf_timeframe_ms=htf_ms,
             market_identity=model.market,
+            runtime_boundaries=boundaries,
         )
 
         cerebro = bt.Cerebro()
@@ -232,7 +244,14 @@ class BacktraderBacktestEngine:
             broker_cls = (
                 RealisticBroker if model.version == REALISTIC_VERSION else ExecutionCostBroker
             )
-            cerebro.setbroker(broker_cls(execution_model=model))
+            cerebro.setbroker(
+                broker_cls(
+                    execution_model=model,
+                    evaluation_start_ms=None
+                    if boundaries is None
+                    else boundaries.evaluation_start_ms,
+                )
+            )
         for tf in timeframes:
             candles = spec.feeds[tf]
             if tf != timeframes[0]:
@@ -277,8 +296,11 @@ class BacktraderBacktestEngine:
             implementation_sha256=metadata["implementation_sha256"],
             initial_capital=spec.initial_capital,
             consumed_bars=len(equity_curve),
+            boundaries=boundaries,
         )
         position = cerebro.broker.getposition(strat.data)
+        if model.version in COSTED_VERSIONS:
+            metrics["execution_audit"] = strat._trace.export(strat)
         last_close = float(strat.data.close[0])
         if model.version in COSTED_VERSIONS:
             metrics["execution_costs"] = build_execution_audit(

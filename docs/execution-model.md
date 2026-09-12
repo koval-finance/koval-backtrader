@@ -1,7 +1,10 @@
 # Execution model
 
-Version 0.11.1 supports `koval-engine>=0.11.0,<0.12.0`; the corrected paired
-acceptance requires engine 0.11.1. Engine 0.11.0 retains its historical limits.
+Version 0.12 supports `koval-engine>=0.11.0,<0.13.0`. Baseline corrected parity
+requires engine 0.11.1; explicit runtime boundaries require engine 0.12.
+Engine 0.11.0 retains its historical limits. See
+[runtime-assurance.md](runtime-assurance.md) for windows, terminal policies,
+persisted audit fields and exact-wheel acceptance.
 It simulates one instrument from closed OHLCV bars. Matching historical and
 paper results demonstrates implementation conformance, not equivalent exchange
 fills. See the [verification and review record](execution-validation.md).
@@ -121,7 +124,7 @@ waivers. Full-runtime tests compare every AccountSnapshot field, closed-trade
 arithmetic and shared input identities. See the measured scope in
 [execution-validation.md](execution-validation.md#0111-paired-acceptance).
 
-Backtests retain and mark final exposure. Use
+By default, backtests retain and mark final exposure. Use
 `LiveEngineConfig(end_of_data_policy="mark_at_last_close", ...)` for equivalent
 paper replay endings. The default paper policy still flattens and charges exit
 costs; differing endings must never be presented as an execution defect.
@@ -252,9 +255,10 @@ outside these structural checks.
 
 ## Reading a result honestly
 
-Closed-trade statistics exclude an unfinished position; final equity marks it
-at the last close without an exit fee. Paper session finalization flattens it,
-so terminal policies must match before comparing totals. Bar-high/low excursion
+Closed-trade statistics exclude an unfinished position. The default ending
+marks it at the last close without an exit fee; an explicit runtime contract
+can select terminal flattening with exit costs. Terminal policies must match
+before comparing totals. Bar-high/low excursion
 diagnostics may include prices before entry or after exit and are not lower
 bounds on actual experienced MAE/MFE. Read raw fills, sample size and out-of-sample
 results alongside aggregate statistics.

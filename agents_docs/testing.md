@@ -82,6 +82,16 @@ metadata. Rebuild stale artifacts; never relax the gate. Release CI runs the
 same checker after building and before upload. See
 [release_process.md](release_process.md) for isolated wheel verification.
 
+`test_runtime_boundaries.py` compares real graph callbacks, all account fields,
+actual preroll, both ending policies and partial/instrument combinations.
+`test_evidence_transport.py` covers typed/JSON/pickle public specs and refusal
+before session start. `test_execution_trace.py` pins saved financial links.
+`test_execution_causality.py` mutates future candles/funding/marks and runs an
+independent Decimal cash calculator and installed public runtime fixtures.
+`test_installed_pair.py` rejects changed/missing/extra wheel bytes and imports
+outside the isolated environment. Run `scripts/verify_pair.py` for actual paired
+installation and the full gate; old engines must reject the optional contract.
+
 ## Update this file when
 
 The suite gains a directory, a fixture convention changes, or a new class of

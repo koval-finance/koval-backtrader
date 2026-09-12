@@ -18,13 +18,19 @@ class ExecutionCostBroker(bt.brokers.BackBroker):
     by the runner for ohlcv_fixed_v1, with an already validated model.
     """
 
-    params = (("execution_model", None),)
+    params = (("execution_model", None), ("evaluation_start_ms", None))
 
     def __init__(self):
         super().__init__()
         self.execution_fills: list[dict] = []
         self.trade_fills: dict[int, list[dict]] = {}
+        self.order_fills: dict[int, list[dict]] = {}
         self._execution_trade_id = 1
+        self._order_ids = {}
+
+    def order_id(self, order):
+        number = self._order_ids.setdefault(order.ref, len(self._order_ids) + 1)
+        return f"order-{number}"
 
     def start(self):
         super().start()
@@ -87,19 +93,21 @@ class ExecutionCostBroker(bt.brokers.BackBroker):
             if not hasattr(self, "execution"):
                 fill = self.execution_fills[-1]
                 if role == "exit":
-                    self.account_ledger.record(
+                    entry = self.account_ledger.record(
                         timestamp_ms=fill["timestamp_ms"],
                         kind="trade_pnl",
                         amount=-executed_size * (adjusted - prior_price),
                         reference_id=str(fill["fill_id"]),
                     )
+                    fill["cashflow_sequences"].append(entry.sequence)
                 if fill["commission"]:
-                    self.account_ledger.record(
+                    entry = self.account_ledger.record(
                         timestamp_ms=fill["timestamp_ms"],
                         kind="commission",
                         amount=-fill["commission"],
                         reference_id=str(fill["fill_id"]),
                     )
+                    fill["cashflow_sequences"].append(entry.sequence)
         return result
 
     def _record_fill(self, order, reference, adjusted, signed_size, commission, role):
@@ -109,6 +117,10 @@ class ExecutionCostBroker(bt.brokers.BackBroker):
         spread_cost = cost * (model.spread_bps / 2 / total_bps) if total_bps else 0.0
         record = {
             "fill_id": len(self.execution_fills) + 1,
+            "order_id": self.order_id(order),
+            "decision_id": order.info.get("koval_decision_id"),
+            "cashflow_sequences": [],
+            "execution_rule": f"{model.version}:{order.info.get('koval_role', 'entry')}:{order.getordername().lower()}",
             "trade_id": self._execution_trade_id,
             "bar_index": len(order.data),
             "timestamp_ms": num2utc_ms(order.executed.dt),
@@ -125,8 +137,15 @@ class ExecutionCostBroker(bt.brokers.BackBroker):
             "commission": float(commission),
             "commission_policy": "uniform",
             "liquidity_role": "unavailable",
+            "evidence_refs": {},
+            "cost_quality": {
+                "commission": "configured",
+                "spread": "configured",
+                "slippage": "configured",
+            },
         }
         self.execution_fills.append(record)
+        self.order_fills.setdefault(order.ref, []).append(record)
         self.trade_fills.setdefault(self._execution_trade_id, []).append(record)
         if not self.positions[order.data].size:
             self._execution_trade_id += 1

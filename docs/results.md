@@ -71,6 +71,13 @@ not archive it. The same metadata appears in `SESSION_START`.
 Both costed profiles add `metrics.execution_costs`. These are quote-currency
 amounts, with no implied USD conversion:
 
+They also export `metrics.execution_audit`, including decision/order/fill IDs,
+the authoritative ledger, account snapshots and terminal exposure. The
+[audit contract](runtime-assurance.md#persisted-audit) defines these fields
+and their accounting relationships. Explicit runtime boundaries are saved in
+execution metadata and run parameters; they select warmup/evaluation windows
+and may opt into terminal flattening.
+
 | Field | Meaning |
 |---|---|
 | `spread_cost`, `slippage_cost` | Actual adverse price adjustment allocated to each assumption, including open entries. |
@@ -269,7 +276,8 @@ engine `koval_candle_stream_sha256_v1`; the older `feeds` hashes use the plugin
 encoding and are not interchangeable. Execution identity uses the paired paper
 profile and hashes all supplied normalized evidence. `identified_simulation`
 means identifiable inputs; compare the complete inputs and terminal policies before claiming parity.
-`run_parameters.end_of_data_policy` is `mark_at_last_close`, not paper's flatten.
+`run_parameters.end_of_data_policy` defaults to `mark_at_last_close`; an explicit
+runtime contract records the selected retain or flatten policy.
 
 ## Research metrics
 

@@ -23,6 +23,7 @@ from koval.engine.instrument_risk import (
     select_instrument_spec,
 )
 from koval.engine.paper_fills import max_quantity_for_stop_risk
+from koval.engine.run_identity import content_sha256
 
 from koval_backtrader.evidence_execution import EvidenceExecution
 from koval_backtrader.execution_broker import ExecutionCostBroker
@@ -58,6 +59,8 @@ class RealisticBroker(ExecutionCostBroker):
             if timestamp == self._last_primary_timestamp:
                 return
             self._last_primary_timestamp = timestamp
+            if self.p.evaluation_start_ms is not None and timestamp < self.p.evaluation_start_ms:
+                return
             proxy = self.execution.evidence.execution_proxy
             self._liquidity = (
                 None
@@ -176,7 +179,11 @@ class RealisticBroker(ExecutionCostBroker):
             commission_policy="evidence_schedule",
         )
         self.execution.record_fill(record, entry_price=order.info["koval_prior_entry"])
-        if self._liquidity is not None and order.info.get("koval_role") != "liquidation":
+        if (
+            self._liquidity is not None
+            and order.info.get("koval_role") != "liquidation"
+            and not order.info.get("koval_terminal")
+        ):
             self._liquidity.allocate(
                 order_id=str(order.ref), requested=Decimal(str(record["size"]))
             )
@@ -190,6 +197,44 @@ class RealisticBroker(ExecutionCostBroker):
         impact = order.info.get("koval_impact")
         record["impact_evidence_id"] = None if impact is None else impact.evidence_id
         record["impact_model"] = None if impact is None else impact.model
+        record["cost_quality"]["commission"] = (
+            "approximated" if self.execution.evidence.fee_schedule else "configured"
+        )
+        if impact is not None and impact.evidence_id is not None:
+            record["cost_quality"]["slippage"] = "approximated"
+        record["evidence_refs"]["fee_schedule"] = {
+            "evidence_id": fee.evidence_id,
+            "sha256": content_sha256(self.execution.fees),
+            "source": fee.source,
+            "status": fee.evidence_status,
+            "rule": "resting_entry_limit_assumed_maker_other_fills_taker",
+        }
+        if spec is not None:
+            record["evidence_refs"]["instrument_specs"] = {
+                "evidence_id": spec.evidence_id,
+                "sha256": content_sha256(spec),
+                "source": spec.source,
+                "status": spec.evidence_status,
+                "rule": "time_valid_instrument_normalization",
+            }
+        proxy = self.execution.evidence.execution_proxy
+        if proxy is not None and not order.info.get("koval_terminal"):
+            duration = order.owner.params.primary_timeframe_ms
+            record["evidence_refs"]["execution_proxy"] = {
+                "sha256": content_sha256(proxy),
+                "status": "approximated",
+                "rule": "offline_shared_completed_bar_volume_budget",
+                "volume_observed_at_ms": None
+                if duration is None
+                else record["timestamp_ms"] + duration,
+            }
+        if order.info.get("koval_role") == "liquidation":
+            mark = self.execution.evidence.mark_prices.at(record["timestamp_ms"])
+            record["evidence_refs"]["mark_prices"] = {
+                "sha256": content_sha256(mark),
+                "source": mark.source,
+                "rule": "single_position_cross_margin_at_mark",
+            }
         liquidation_fee = order.info.get("koval_liquidation_fee", 0.0)
         record["liquidation_fee"] = liquidation_fee
         slip = order.info.get("koval_slippage_bps", self.p.execution_model.slippage_bps)
@@ -221,12 +266,13 @@ class RealisticBroker(ExecutionCostBroker):
                 self.cancel(pending_entry)
         if liquidation_fee:
             self.cash -= liquidation_fee
-            self.account_ledger.record(
+            entry = self.account_ledger.record(
                 timestamp_ms=record["timestamp_ms"],
                 kind="liquidation_fee",
                 amount=-liquidation_fee,
                 reference_id=str(record["fill_id"]),
             )
+            record["cashflow_sequences"].append(entry.sequence)
 
     def validate_entry(self, setup, size):
         values = (setup.entry_price, setup.stop_loss, setup.take_profit, size)
@@ -292,7 +338,10 @@ class RealisticBroker(ExecutionCostBroker):
                 if "koval_timeline" not in order.info:
                     order.addinfo(
                         koval_timeline=execution_timeline(
-                            num2utc_ms(order.created.dt), proxy.latency
+                            order.info.get(
+                                "koval_decision_timestamp_ms", num2utc_ms(order.created.dt)
+                            ),
+                            proxy.latency,
                         )
                     )
                 if timestamp < order.info["koval_timeline"].fill_eligible_timestamp_ms:
@@ -356,7 +405,11 @@ class RealisticBroker(ExecutionCostBroker):
         if actual:
             requested = abs(order.executed.remsize)
             allocated = requested
-            if self._liquidity is not None and order.info.get("koval_role") != "liquidation":
+            if (
+                self._liquidity is not None
+                and order.info.get("koval_role") != "liquidation"
+                and not order.info.get("koval_terminal")
+            ):
                 allocated = min(requested, float(self._liquidity.remaining))
             if (
                 not actual_entry
@@ -388,7 +441,7 @@ class RealisticBroker(ExecutionCostBroker):
                 if timeline is not None and actual_entry
                 else num2utc_ms(order.data.datetime[0])
             )
-            volume = float(order.data.volume[0])
+            volume = 0.0 if order.info.get("koval_terminal") else float(order.data.volume[0])
             slippage = resolve_slippage_bps(
                 fixed_slippage_bps=Decimal(str(self.p.execution_model.slippage_bps)),
                 participation=Decimal(str(min(1.0, allocated / volume)))
@@ -507,7 +560,10 @@ class RealisticBroker(ExecutionCostBroker):
             owner = order.owner
             if owner._stop_order is None or not owner._stop_order.alive():
                 owner._place_bracket(
-                    order.executed.price, abs(self.positions[order.data].size), setup
+                    order.executed.price,
+                    abs(self.positions[order.data].size),
+                    setup,
+                    origin_order=order,
                 )
                 self._protection_active_ms = (
                     None if timeline is None else timeline.protection_active_timestamp_ms
