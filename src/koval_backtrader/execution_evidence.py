@@ -18,6 +18,15 @@ from koval.engine.instrument_risk import (
 )
 from koval.engine.run_identity import execution_evidence_manifest
 
+# Older supported engines retain the original decoder. New paired releases
+# use the MIT-owned strict boundary, also used by the host and paper runtime.
+try:
+    from koval.engine.execution_evidence import decode_execution_evidence
+except ModuleNotFoundError as exc:
+    if exc.name != "koval.engine.execution_evidence":
+        raise
+    decode_execution_evidence = None
+
 EVIDENCE_KEYS = frozenset(
     {"funding", "fee_schedule", "instrument_specs", "mark_prices", "execution_proxy"}
 )
@@ -100,7 +109,11 @@ def resolve_execution_evidence(config, *, realistic, market) -> ExecutionEvidenc
     supplied = {key: config[key] for key in EVIDENCE_KEYS if key in config}
     if supplied and not realistic:
         raise ValueError("execution evidence requires ohlcv_realistic_v2")
-    evidence = _decode(ExecutionEvidence, supplied)
+    evidence = (
+        decode_execution_evidence(supplied)
+        if decode_execution_evidence is not None
+        else _decode(ExecutionEvidence, supplied)
+    )
     if not supplied:
         return evidence
     if market is None:

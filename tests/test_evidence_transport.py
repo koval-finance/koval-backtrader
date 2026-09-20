@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Public EngineRunSpec through JSON request and worker pickle transport."""
 
+import builtins
 import json
 import pickle
+import runpy
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -16,6 +19,8 @@ from koval_backtrader.backtest_runner import create_engine
 from koval_backtrader.execution_evidence import evidence_json
 from tests.test_realistic_evidence import START, STEP, D, instrument
 from tests.test_runtime_boundaries import MARKET, MODEL, candles, graph
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def evidence_set():
@@ -45,6 +50,24 @@ def evidence_set():
         ),
         "execution_proxy": ExecutionProxyConfig(D("0.1"), "carry", ExecutionLatency()),
     }
+
+
+def test_new_decoder_fallback_does_not_hide_an_internal_missing_dependency(monkeypatch):
+    original_import = builtins.__import__
+
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "koval.engine.execution_evidence":
+            raise ModuleNotFoundError(
+                "simulated missing internal dependency", name="internal_dependency"
+            )
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    with pytest.raises(ModuleNotFoundError, match="missing internal dependency"):
+        runpy.run_path(
+            ROOT / "src" / "koval_backtrader" / "execution_evidence.py",
+            run_name="_koval_backtrader_import_probe",
+        )
 
 
 def transport_spec(evidence, *, json_transport=True):
@@ -145,3 +168,16 @@ def test_decimal_transport_errors_are_value_errors():
     evidence["instrument_specs"][0]["step_size"] = "invalid-decimal"
     with pytest.raises(ValueError, match="decimal|Decimal"):
         create_engine().run(transport_spec(evidence))
+
+
+def test_realistic_result_declares_unmeasured_accuracy_and_conditional_effects():
+    result = create_engine().run(transport_spec(evidence_set()))
+    execution_model = result.metrics["execution_model"]
+    if "realism_report" not in execution_model:
+        pytest.skip("realism report is unavailable on the older engine compatibility matrix")
+    report = execution_model["realism_report"]
+    assert report["accuracy"] == "unmeasured"
+    assert report["maximum_error_pct"] is None
+    assert report["effects"]["funding"] == "supplied_evidence"
+    assert report["effects"]["liquidation"] == "sampled_mark_model"
+    assert report["effects"]["partial_fills"] == "ohlcv_proxy"

@@ -203,6 +203,16 @@ class BacktraderBacktestEngine:
             primary = spec.feeds[ordered_timeframes(list(spec.feeds))[0]]
             if boundaries is not None:
                 primary = primary[primary[:, 0] >= boundaries.evaluation_start_ms]
+            if model.execution_evidence.funding is not None:
+                step = timeframe_to_minutes(ordered_timeframes(list(spec.feeds))[0]) * 60_000
+                if any(
+                    record.settlement_timestamp_ms % step
+                    for record in model.execution_evidence.funding.records
+                ):
+                    raise ValueError(
+                        "funding settlements must align with the execution candle grid; "
+                        "use a finer execution timeframe"
+                    )
             validate_evidence_coverage(model.execution_evidence, primary[:, 0])
         metadata = execution_metadata(model)
         if boundaries is not None:
@@ -237,6 +247,7 @@ class BacktraderBacktestEngine:
             htf_timeframe_ms=htf_ms,
             market_identity=model.market,
             runtime_boundaries=boundaries,
+            preparation_candles=spec.feeds[timeframes[0]],
         )
 
         cerebro = bt.Cerebro()

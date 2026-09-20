@@ -125,6 +125,8 @@ def execution_metadata(model: ExecutionModel) -> dict:
             else "unavailable",
         )
         metadata["evidence_manifest"] = evidence.manifest()
+        if hasattr(evidence, "realism_report"):
+            metadata["realism_report"] = evidence.realism_report()
         effects = metadata["unmodelled_effects"]
         modelled = []
         if evidence.funding:

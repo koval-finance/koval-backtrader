@@ -6,7 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.12.0] - Unreleased
+## [0.12.1] - 2026-09-20
+
+### Execution correctness
+
+- Causal matching-price margin for partial entry remainders; protection delay
+  anchored to actual first execution. Off-grid funding fails before simulation.
+- Adopt the paired MIT strict evidence decoder and conditional realism report;
+  retain compatibility with the original decoder on older supported engines.
+
+### Performance
+
+- Pass the boundary-trimmed primary feed to each strategy instance's optional
+  `prepare_backtest` hook. Compatible engine builds precompute exact finite-window
+  EMA/RSI/ATR values. All simulation decisions, broker matching, events and audit
+  records still execute; fresh runs and verification replays both benefit.
+- Older engines and custom strategies without the hook continue unchanged.
+  No dependency floor, protocol, fill assumption or history-window change.
+
+## [0.12.0] - 2026-09-12
 
 ### Added
 
@@ -39,7 +57,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 The engine dependency range is now `>=0.11.0,<0.13.0`; the older graph binding
 fallback remains. Legacy result shape and default terminal behavior are preserved.
-This is an unpublished candidate and no exchange-execution certification.
+No exchange-execution certification is claimed.
 
 ## [0.11.1] - 2026-09-12
 
@@ -248,5 +266,10 @@ First public release. Extracted from a private monorepo with a clean history.
 - Releases publish to PyPI through Trusted Publishing (OIDC) with PEP 740
   attestations. No long-lived PyPI credential is used.
 
-[0.9.1]: https://github.com/koval-finance/koval-backtrader/releases/tag/v0.9.1
+[Unreleased]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.0...v0.12.1
+[0.12.0]: https://github.com/koval-finance/koval-backtrader/compare/v0.11.1...v0.12.0
+[0.11.1]: https://github.com/koval-finance/koval-backtrader/compare/v0.11.0...v0.11.1
+[0.11.0]: https://github.com/koval-finance/koval-backtrader/compare/v0.9.1...v0.11.0
+[0.9.1]: https://github.com/koval-finance/koval-backtrader/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/koval-finance/koval-backtrader/releases/tag/v0.9.0

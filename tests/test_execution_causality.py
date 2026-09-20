@@ -161,3 +161,69 @@ def test_primary_decisions_continue_before_the_first_secondary_bar(monkeypatch):
     assert [timestamp for timestamp, _ in seen] == spec.feeds["1m"][:, 0].tolist()
     assert all(htf is None for _, htf in seen)
     assert len(result.metrics["execution_audit"]["decisions"]) == len(seen)
+
+
+@pytest.mark.parametrize("direction", ["long", "short"])
+def test_partial_opening_fill_margin_does_not_read_future_close(monkeypatch, direction):
+    outcomes = []
+    for close in (50, 100, 150):
+        result, _, _ = execute(
+            monkeypatch,
+            [QUIET, QUIET, (100, 151, 49, close, 10)],
+            direction=direction,
+            capital=200,
+            size=2,
+            stop=10 if direction == "long" else 300,
+            target=300 if direction == "long" else 10,
+            evidence={
+                "execution_proxy": ExecutionProxyConfig(
+                    Decimal("0.1"),
+                    "carry",
+                    ExecutionLatency(),
+                )
+            },
+        )
+        outcomes.append(
+            [
+                (fill["timestamp_ms"], fill["fill_price"], fill["size"])
+                for fill in result.metrics["execution_costs"]["fills"]
+            ]
+        )
+    assert outcomes[0] == outcomes[1] == outcomes[2]
+    assert len(outcomes[0]) == 2
+
+
+def test_delayed_limit_protection_waits_from_actual_fill(monkeypatch):
+    result, _, _ = execute(
+        monkeypatch,
+        [(110, 111, 109, 110, 10)] * 3 + [(100, 105, 89, 100, 10)] * 3,
+        size=1,
+        entry_type="limit",
+        stop=90,
+        target=120,
+        evidence={
+            "execution_proxy": ExecutionProxyConfig(
+                Decimal("1"),
+                "carry",
+                ExecutionLatency(protection_activation_ms=2 * STEP),
+            )
+        },
+    )
+    fills = result.metrics["execution_costs"]["fills"]
+    assert [fill["timestamp_ms"] for fill in fills] == [START + 3 * STEP, START + 5 * STEP]
+
+
+def test_funding_inside_final_execution_bar_is_not_silently_omitted(monkeypatch):
+    funding = build_funding_series(
+        [
+            FundingRecord("BTCUSDT", Decimal(".01"), START + t, Decimal("100"), STEP, "test")
+            for t in (STEP // 2, STEP + STEP // 2)
+        ],
+        exchange="binance",
+        market="future",
+        symbol="BTCUSDT",
+        requested_start_ms=START,
+        requested_end_ms=START + 2 * STEP,
+    )
+    with pytest.raises(ValueError, match="funding.*execution.*grid"):
+        execute(monkeypatch, [QUIET, QUIET], size=1, evidence={"funding": funding})

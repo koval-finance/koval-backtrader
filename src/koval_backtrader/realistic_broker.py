@@ -536,7 +536,7 @@ class RealisticBroker(ExecutionCostBroker):
             order.addinfo(koval_fill_quantity=fill_quantity)
             available = (
                 self.account_ledger.balance
-                + current.size * (float(order.data.close[0]) - current.price)
+                + current.size * (price - current.price)
                 - abs(current.size) * current.price / model.leverage
             )
             required = (
@@ -548,6 +548,15 @@ class RealisticBroker(ExecutionCostBroker):
                 order.margin()
                 self.notify(order)
                 return
+        if actual_entry and timeline is not None:
+            # Activation follows an actual fill, not the earliest eligible bar.
+            activation = (
+                self._protection_active_ms
+                if current.size
+                else num2utc_ms(order.data.datetime[0]) + proxy.latency.protection_activation_ms
+            )
+            timeline = replace(timeline, protection_active_timestamp_ms=activation)
+            order.addinfo(koval_timeline=timeline)
         comminfo = self.getcommissioninfo(order.data)
         previous_rate = comminfo.p.commission
         try:

@@ -164,3 +164,37 @@ See [../docs/runtime-assurance.md](../docs/runtime-assurance.md).
 
 A module gains or loses a responsibility, the run flow changes shape, or the
 data crossing the engine boundary changes type.
+
+## Optional indicator preparation
+
+The runner passes the actual primary feed, after runtime-boundary trimming, as
+`preparation_candles`. Each adapter instance calls the strategy's optional
+`prepare_backtest(candles, history_bars=...)` hook once. Older engine versions and
+custom strategies without a callable hook use normal scalar evaluation.
+
+Compatible graph strategies batch pure EMA/RSI/ATR calculations with NumPy while
+preserving finite-window SMA seeds and previous/current values. The normal
+per-bar history, HTF availability, graph state, broker, audit and event paths
+remain active. Preparation includes warmup candles but does not execute warmup
+decisions. Future primary candles cannot affect earlier prepared values. No new
+`EngineRunSpec` field or execution-profile setting is required.
+
+`tests/test_indicator_preparation.py` checks per-instance preparation, older-host
+fallback, and complete result/event equality across the rolling-window boundary,
+including two feeds and explicit warmup/terminal policies.
+
+## 0.12.1 realism corrections
+
+Carried partial-entry affordability marks existing exposure at the matching
+price, not the later candle close. Protection delay begins with actual first
+execution, including delayed limits and unavailable early volume; subsequent
+partials keep the existing activation. Funding settlements must align with the
+execution grid or the run fails before any decisions. Use finer candles rather
+than inventing intrabar exposure.
+
+With the paired engine, evidence uses its strict MIT JSON codec and results
+include `realism_report`: supplied evidence, modeled proxies, unavailable effects
+and explicitly unmeasured exchange accuracy. The original decoder remains for
+older supported engines. No numerical accuracy or error ceiling is inferred.
+Local candidate wheels must be rebuilt after edits; production release is a
+separate human action.

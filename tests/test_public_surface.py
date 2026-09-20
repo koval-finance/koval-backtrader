@@ -29,6 +29,7 @@ FORBIDDEN_PATHS = (
     "src/koval",
 )
 FORBIDDEN_PUBLIC_DOCUMENTS = (
+    "REALISTIC_TRADING_ROADMAP.md",
     "agents_docs/application_integration.md",
     "agents_docs/release_0_11_1.md",
 )
@@ -73,15 +74,10 @@ def test_no_private_path_is_tracked_by_git():
     assert tracked == [], f"private paths must not be tracked: {tracked}"
 
 
-@pytest.mark.skipif(not _is_git_worktree(), reason="tracked-file guard requires a Git checkout")
-def test_no_private_record_is_tracked_as_public_agent_documentation():
-    tracked = subprocess.run(
-        ["git", "-C", str(ROOT), "ls-files", "--", *FORBIDDEN_PUBLIC_DOCUMENTS],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.split()
-    assert tracked == [], f"private records must not be public agent documentation: {tracked}"
+def test_no_private_record_is_present_as_public_agent_documentation():
+    present = [path for path in FORBIDDEN_PUBLIC_DOCUMENTS if (ROOT / path).is_file()]
+
+    assert present == [], f"private records must not be public agent documentation: {present}"
 
 
 @pytest.mark.skipif(not _is_git_worktree(), reason="tracked-file guard requires a Git checkout")

@@ -50,6 +50,7 @@ _DEFAULT_PARAMS: tuple = (
     ("htf_timeframe_ms", None),
     ("market_identity", None),
     ("runtime_boundaries", None),
+    ("preparation_candles", None),
 )
 
 
@@ -67,6 +68,9 @@ class BTStrategyAdapter(bt.Strategy):
         super().__init__()
         self._strategy: DeclarativeStrategy = self._create_strategy_instance()
         self._strategy.config = dict(self.params.strategy_config or {})
+        prepare = getattr(self._strategy, "prepare_backtest", None)
+        if callable(prepare) and self.params.preparation_candles is not None:
+            prepare(self.params.preparation_candles, history_bars=int(self.params.history_bars))
 
         self._entry_order: bt.Order | None = None
         self._stop_order: bt.Order | None = None

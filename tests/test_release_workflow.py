@@ -7,6 +7,8 @@ guarantees it.
 
 from __future__ import annotations
 
+import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -16,6 +18,15 @@ ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 MIRROR_WORKFLOW = ROOT / ".github" / "workflows" / "mirror.yml"
 SCORECARD_WORKFLOW = ROOT / ".github" / "workflows" / "scorecard.yml"
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+CHANGELOG = ROOT / "CHANGELOG.md"
+README = ROOT / "README.md"
+
+
+def _project_version() -> str:
+    return tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"][
+        "version"
+    ]
 
 
 def _workflow_text() -> str:
@@ -62,6 +73,31 @@ def test_changelog_is_validated_before_pypi_publish():
     publish = workflow.index("pypa/gh-action-pypi-publish@")
 
     assert changelog_validation < publish
+
+
+def test_release_docs_match_the_project_version():
+    version = _project_version()
+    minor_series = version.rsplit(".", 1)[0]
+    changelog = CHANGELOG.read_text(encoding="utf-8")
+    readme = README.read_text(encoding="utf-8")
+
+    assert re.search(
+        rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$",
+        changelog,
+        re.MULTILINE,
+    )
+    assert (
+        f"[Unreleased]: https://github.com/koval-finance/koval-backtrader/compare/v{version}...HEAD"
+    ) in changelog
+    assert (f"[{version}]: https://github.com/koval-finance/koval-backtrader/compare/") in changelog
+    assert f"**Status:** {minor_series}.x." in readme
+
+
+def test_installed_pair_ci_covers_the_0121_engine_release():
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    versions = workflow["jobs"]["installed-pair"]["strategy"]["matrix"]["engine-version"]
+
+    assert versions == ["0.11.1", "0.12.0", "0.12.1"]
 
 
 def test_pypi_publish_precedes_the_public_github_release():

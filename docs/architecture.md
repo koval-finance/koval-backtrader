@@ -35,8 +35,8 @@ in either direction, so a caller never links Backtrader by accident.
 
 ```
 src/koval_backtrader/
-├── backtest_runner.py   338 lines  the plugin: spec in, result out
-├── bt_adapter.py        992 lines  DeclarativeStrategy → bt.Strategy bridge
+├── backtest_runner.py   349 lines  the plugin: spec in, result out
+├── bt_adapter.py        996 lines  DeclarativeStrategy → bt.Strategy bridge
 ├── bt_analyzers.py      126 lines  trade list and equity curve extraction
 └── oco_patch.py         148 lines  the Backtrader OCO bug fix
 ```
@@ -262,3 +262,21 @@ The deprecated plugin reproducibility grade never promises certification.
 `strategy_account.py` uses the public engine 0.11.1 `bind_account` hook.
 Read [execution-validation.md](execution-validation.md) for measured acceptance
 and model limits. Matching simulations does not establish venue fill fidelity.
+
+## Optional indicator preparation
+
+The runner passes the actual primary feed, after runtime-boundary trimming, as
+`preparation_candles`. Each adapter instance calls the strategy's optional
+`prepare_backtest(candles, history_bars=...)` hook once. Older engine versions and
+custom strategies without a callable hook use normal scalar evaluation.
+
+Compatible graph strategies batch pure EMA/RSI/ATR calculations with NumPy while
+preserving finite-window SMA seeds and previous/current values. The normal
+per-bar history, HTF availability, graph state, broker, audit and event paths
+remain active. Preparation includes warmup candles but does not execute warmup
+decisions. Future primary candles cannot affect earlier prepared values. No new
+`EngineRunSpec` field or execution-profile setting is required.
+
+`tests/test_indicator_preparation.py` checks per-instance preparation, older-host
+fallback, and complete result/event equality across the rolling-window boundary,
+including two feeds and explicit warmup/terminal policies.

@@ -14,7 +14,8 @@ through Backtrader's `Cerebro` and hands back metrics, closed trades, an
 equity curve, and — if you ask for it — the full stream of decisions that
 produced them. No Backtrader object crosses back into your code.
 
-**Status:** 0.11.x. Requires koval-engine 0.11.x. The public API may change before 1.0.
+**Status:** 0.12.x. Supports `koval-engine>=0.11.0,<0.13.0`. The public API may
+change before 1.0.
 
 Execution costs are an explicit, versioned model rather than a hidden default.
 What it does and does not simulate is stated in full in the

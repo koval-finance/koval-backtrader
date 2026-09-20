@@ -268,3 +268,19 @@ results alongside aggregate statistics.
 - [results.md](results.md) — result fields and reconciliation.
 - [execution-validation.md](execution-validation.md) — tests, paired acceptance and historical findings.
 - [execution-research.md](execution-research.md) — primary sources and decisions.
+
+## 0.12.1 realism corrections
+
+Carried partial-entry affordability marks existing exposure at the matching
+price, not the later candle close. Protection delay begins with actual first
+execution, including delayed limits and unavailable early volume; subsequent
+partials keep the existing activation. Funding settlements must align with the
+execution grid or the run fails before any decisions. Use finer candles rather
+than inventing intrabar exposure.
+
+With the paired engine, evidence uses its strict MIT JSON codec and results
+include `realism_report`: supplied evidence, modeled proxies, unavailable effects
+and explicitly unmeasured exchange accuracy. The original decoder remains for
+older supported engines. No numerical accuracy or error ceiling is inferred.
+Local candidate wheels must be rebuilt after edits; production release is a
+separate human action.

@@ -96,6 +96,7 @@ def test_sdist_contains_every_public_test(tmp_path):
 
     assert _public_test_files() <= members
     assert REQUIRED_SOURCE_FILES <= members
+    assert Path("REALISTIC_TRADING_ROADMAP.md") not in members
     assert not any("__pycache__" in path.parts or path.suffix == ".pyc" for path in members)
 
     roots = [path for path in unpacked.iterdir() if path.is_dir()]

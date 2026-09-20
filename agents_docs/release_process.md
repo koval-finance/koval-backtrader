@@ -62,13 +62,15 @@ The declared floor remains 0.11.0, with its prior graph fallback; complete
 is recorded in [../docs/execution-validation.md](../docs/execution-validation.md).
 Never convert passing build checks into an exchange-fidelity claim.
 
-For 0.12, publish engine 0.12.0 first: the exact-pair CI matrix downloads
-0.11.1 and 0.12.0 wheels and verifies the built plugin on Python 3.11/3.13.
+For 0.12.1, publish engine 0.12.1 first: the exact-pair CI matrix downloads
+0.11.1, 0.12.0 and 0.12.1 wheels and verifies the built plugin on Python
+3.11/3.13.
 Use [../scripts/verify_pair.py](../scripts/verify_pair.py) with the exact candidate
 wheel before publication; it invokes the complete gate using
 `KOVAL_VERIFY_PYTHON`, checks installed bytes and emits a hash manifest.
 Protocol 2 runtime boundaries are optional; the old default path remains
-available on 0.11.1. The historical 0.11.0 fallback is not a full parity claim.
+available on 0.11.1, while 0.12.0 remains in the matrix to protect patch-level
+compatibility. The historical 0.11.0 fallback is not a full parity claim.
 The measured matrix belongs in
 [../docs/execution-validation.md](../docs/execution-validation.md).
 
