@@ -64,7 +64,7 @@
   },
   "entry_point": "koval_backtrader.backtest_runner:create_engine",
   "scope": "offline_simulation_conformance",
-  "verification_source_sha256": "ef1346efeb128f37e3eb106c78a35b31876cf088eeae965766cb94911d31c05e",
+  "verification_source_sha256": "39fca944b5bdf0427146ecae74b4f20fc1c941cf3a07a9e46fac75fa30acb95e",
   "gates": {
     "pip_check": "passed",
     "discovery_and_wheel_bytes": "passed",

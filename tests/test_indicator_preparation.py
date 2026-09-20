@@ -10,6 +10,13 @@ from tests.test_engine_signal_parity import _ema_cross_graph
 from tests.test_runtime_boundaries import candles, spec_for
 
 
+def preparation_spec(rows=None):
+    spec = spec_for(rows)
+    if "runtime_contract" not in EngineRunSpec.__dataclass_fields__:
+        spec.runtime_contract = None
+    return spec
+
+
 def test_runner_prepares_each_strategy_instance_with_its_primary_history(monkeypatch):
     assemble = backtest_runner.assemble_from_graph
     calls = []
@@ -25,12 +32,16 @@ def test_runner_prepares_each_strategy_instance_with_its_primary_history(monkeyp
 
     monkeypatch.setattr(backtest_runner, "assemble_from_graph", assembled)
     original = candles()
-    first = backtest_runner.create_engine().run(spec_for(original))
-    second = backtest_runner.create_engine().run(spec_for(original.copy()))
+    first = backtest_runner.create_engine().run(preparation_spec(original))
+    second = backtest_runner.create_engine().run(preparation_spec(original.copy()))
     assert len(calls) == 2
     assert calls[0][0] is not calls[1][0]
-    # The runner prepares the same boundary-trimmed feed it gives the simulator.
-    np.testing.assert_array_equal(calls[0][1], original[:6])
+    expected = (
+        original[:6] if "runtime_contract" in EngineRunSpec.__dataclass_fields__ else original
+    )
+    # The runner prepares the same feed it gives the simulator. Runtime boundaries
+    # trim it on engine 0.12+; the supported 0.11 fallback has no such contract.
+    np.testing.assert_array_equal(calls[0][1], expected)
     assert calls[0][2] == 1000
     assert first.trades == second.trades
     assert first.equity_curve == second.equity_curve
@@ -46,7 +57,7 @@ def test_strategy_without_preparation_hook_still_executes(monkeypatch):
         return strategy
 
     monkeypatch.setattr(backtest_runner, "assemble_from_graph", assembled)
-    result = backtest_runner.create_engine().run(spec_for())
+    result = backtest_runner.create_engine().run(preparation_spec())
     assert result.metrics["execution_audit"]["decisions"]
 
 

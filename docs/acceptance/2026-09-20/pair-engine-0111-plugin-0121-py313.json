@@ -2,9 +2,9 @@
   "schema_version": "koval_installed_pair_acceptance_v1",
   "packages": {
     "koval-engine": {
-      "wheel": "koval_engine-0.12.1-py3-none-any.whl",
-      "sha256": "7b20cd9733e9e75f64c5bafeb1a849ef50692322aa4cfa52d3a51e83bc7b5c67",
-      "version": "0.12.1"
+      "wheel": "koval_engine-0.11.1-py3-none-any.whl",
+      "sha256": "0348f55a51f68d130879d15368aefbceff12f5a00e767556f750028d948ec09d",
+      "version": "0.11.1"
     },
     "koval-backtrader": {
       "wheel": "koval_backtrader-0.12.1-py3-none-any.whl",
@@ -31,7 +31,7 @@
     "jaraco.functools": "4.6.0",
     "keyring": "25.7.0",
     "koval-backtrader": "0.12.1",
-    "koval-engine": "0.12.1",
+    "koval-engine": "0.11.1",
     "markdown-it-py": "4.2.0",
     "mdurl": "0.1.2",
     "more-itertools": "11.1.0",

@@ -6,12 +6,13 @@ Prepared 2026-09-20 from the exact local `koval-engine 0.12.1` and
 `koval-backtrader 0.12.1` candidate wheels. A clean Python 3.13.5 environment
 passed `pip check`, entry-point discovery, installed package-byte verification,
 lint, formatting and the complete **906-test** plugin suite. A second clean run
-against the published `koval-engine 0.12.0` wheel passed **903 tests with 3
-feature-gated skips**: the preparation hook and realism report do not exist on
-that older engine. The retained manifests identify both wheel hashes, the
-verifier source and every installed dependency:
+against each published older engine wheel (`0.11.1` and `0.12.0`) passed **903
+tests with 3 feature-gated skips**: the engine-side preparation hook and realism
+report do not exist on those versions. The retained manifests identify both
+wheel hashes, the verifier source and every installed dependency:
 
 - [0.12.1 candidate pair](acceptance/2026-09-20/pair-candidate-py313.json)
+- [Published engine 0.11.1 with plugin candidate 0.12.1](acceptance/2026-09-20/pair-engine-0111-plugin-0121-py313.json)
 - [Published engine 0.12.0 with plugin candidate 0.12.1](acceptance/2026-09-20/pair-engine-0120-plugin-0121-py313.json)
 
 This is offline simulation conformance, not exchange-fill certification. It is

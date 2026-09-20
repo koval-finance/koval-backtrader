@@ -3,6 +3,19 @@
 Dated failure memory. Newest first. Add an entry when a failure costs more
 than a few minutes to understand — the next reader is usually you.
 
+## 2026-09-20 — installed-pair CI fails only on engine 0.11.1
+
+**Symptom:** the Python 3.11 and 3.13 jobs for engine 0.11.1 fail in
+`test_indicator_preparation.py` with `ProtocolVersionError: runtime boundaries
+require koval-engine 0.12 or later`; the 0.12.0 and 0.12.1 pairs pass.
+**Cause:** the preparation tests reused `spec_for()`, which deliberately attaches
+the 0.12 runtime-boundary contract even when the installed `EngineRunSpec` does
+not declare it. The tests accidentally coupled an optional preparation hook to
+an unrelated newer protocol feature.
+**Fix:** clear the runtime contract when the installed engine lacks that field.
+The same test still asserts boundary-trimmed preparation on 0.12+, while 0.11.1
+asserts preparation of the full simulator feed. Re-run every installed pair.
+
 ## 2026-09-12 — closed HTF history changes when a future row changes
 
 **Symptom:** after the first HTF close, changing later candles changes previously
