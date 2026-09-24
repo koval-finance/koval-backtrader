@@ -46,15 +46,16 @@ def test_loaded_package_must_match_wheel_bytes_inside_the_environment(tmp_path, 
             check.check_installed_package(wheel, package, prefix)
 
 
-def test_dependency_range_admits_the_explicit_runtime_contract():
+def test_dependency_range_requires_the_engine_futures_contract():
     import tomllib
 
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())
     requirement = next(
         Requirement(d) for d in config["project"]["dependencies"] if d.startswith("koval-engine")
     )
-    assert "0.12.0" in requirement.specifier
-    assert "0.13.0" not in requirement.specifier
+    assert "0.12.1" not in requirement.specifier
+    assert "0.13.0" in requirement.specifier
+    assert "0.14.0" not in requirement.specifier
 
 
 def test_verify_can_run_the_full_gate_with_an_isolated_interpreter():

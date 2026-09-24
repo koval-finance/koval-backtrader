@@ -93,11 +93,11 @@ def test_release_docs_match_the_project_version():
     assert f"**Status:** {minor_series}.x." in readme
 
 
-def test_installed_pair_ci_covers_the_0121_engine_release():
+def test_installed_pair_ci_covers_the_required_0130_engine_release():
     workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
     versions = workflow["jobs"]["installed-pair"]["strategy"]["matrix"]["engine-version"]
 
-    assert versions == ["0.11.1", "0.12.0", "0.12.1"]
+    assert versions == ["0.13.0"]
 
 
 def test_pypi_publish_precedes_the_public_github_release():

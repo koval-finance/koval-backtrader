@@ -1,5 +1,20 @@
 # Execution validation and release review
 
+## 0.13.0 candidate acceptance
+
+Prepared 2026-09-23 from the exact local `koval-engine 0.13.0` and
+`koval-backtrader 0.13.0` wheels. An isolated Python 3.13.5 environment passed
+`pip check`, entry-point discovery, installed package-byte verification, lint,
+formatting, and the full **912-test** plugin suite. The retained
+[candidate-pair manifest](acceptance/2026-09-23/pair-0130-py313.json) records
+both wheel hashes, the verifier source, dependencies, and gate outcomes.
+
+The adapter now requires `koval-engine>=0.13.0,<0.14.0`, because its Futures
+risk path imports `validate_initial_leverage`, which is absent from the
+published 0.12.1 engine wheel. This acceptance establishes local offline
+simulation conformance. Linux CI, published-wheel acceptance, exchange
+calibration, and real forward paper evidence remain separate gates.
+
 ## 0.12.1 candidate acceptance
 
 Prepared 2026-09-20 from the exact local `koval-engine 0.12.1` and

@@ -14,7 +14,7 @@ through Backtrader's `Cerebro` and hands back metrics, closed trades, an
 equity curve, and — if you ask for it — the full stream of decisions that
 produced them. No Backtrader object crosses back into your code.
 
-**Status:** 0.12.x. Supports `koval-engine>=0.11.0,<0.13.0`. The public API may
+**Status:** 0.13.x. This source candidate requires `koval-engine>=0.13.0,<0.14.0`. The public API may
 change before 1.0.
 
 Execution costs are an explicit, versioned model rather than a hidden default.
@@ -224,9 +224,9 @@ The [runtime assurance guide](docs/runtime-assurance.md) covers explicit
 warmup/evaluation windows, terminal policies, persisted audit links and
 verification of exact installed wheel pairs.
 
-Requires Python 3.11+ and `koval-engine>=0.11.0,<0.13.0`. The upper bound
-tracks the engine's backtest protocol version; when the engine raises it,
-this package needs a release rather than a looser pin.
+Requires Python 3.11+ and `koval-engine>=0.13.0,<0.14.0`. The upper bound
+protects the tested public API and backtest protocol contract; a future engine
+series needs installed-pair verification before this range is widened.
 
 Backtrader is pinned loosely (`>=1.9.78`) but coupled tightly: `oco_patch.py`
 reproduces broker internals, so treat any Backtrader upgrade as a

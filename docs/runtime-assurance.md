@@ -153,8 +153,8 @@ Build wheel and sdist, then retain the exact engine wheel and run:
 python -m build
 python scripts/check_dist.py --require-artifacts
 python scripts/verify_pair.py \
-  --engine /path/to/koval_engine-0.12.1-py3-none-any.whl \
-  --plugin dist/koval_backtrader-0.12.1-py3-none-any.whl \
+  --engine /path/to/koval_engine-0.13.0-py3-none-any.whl \
+  --plugin dist/koval_backtrader-0.13.0-py3-none-any.whl \
   --python /path/to/python3.11 \
   --output data_cache/pair-acceptance.json
 ```
@@ -166,15 +166,14 @@ editable/sibling package imports. The manifest records wheel hashes, versions,
 Python/platform, dependencies, verifier/test source identity and gate outcome.
 Retain its logs and artifacts in durable storage outside a disposable cache.
 
-CI tests engine 0.11.1, 0.12.0 and 0.12.1 with the built plugin on Python 3.11
-and 3.13. Publish engine 0.12.1 before expecting the new CI matrix to pass from
-PyPI.
+CI tests the required engine 0.13.0 with the built plugin on Python 3.11 and
+3.13. Publish engine 0.13.0 before expecting that matrix to resolve from PyPI.
 Local candidate validation and hosted CI are separate evidence.
 
-The permitted dependency range is `>=0.11.0,<0.13.0`. The original 0.11.0
-fallback remains for compatibility; its historical parity gaps are documented
-in [execution-validation.md](execution-validation.md). The range is not a
-claim that every possible pair passed this acceptance command.
+The permitted dependency range is `>=0.13.0,<0.14.0`. Older adapter releases
+retain their historical engine compatibility; their parity gaps are documented
+in [execution-validation.md](execution-validation.md). The range is not a claim
+that every possible future patch pair passed this acceptance command.
 
 Public installed-engine fixtures, real GraphStrategy/LiveEngine comparisons,
 future-input mutations and an independent Decimal calculator cover simulation

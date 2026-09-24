@@ -600,3 +600,107 @@ def test_non_quote_collateral_is_refused(monkeypatch):
             [QUIET] * 2,
             evidence={"instrument_specs": (instrument(collateral_currency="BTC"),)},
         )
+
+
+def test_entry_above_current_margin_tier_leverage_is_rejected(monkeypatch):
+    result, events, _ = execute(
+        monkeypatch,
+        [QUIET] * 2,
+        evidence={
+            "instrument_specs": (
+                instrument(
+                    margin_tiers=(
+                        MaintenanceMarginTier(
+                            notional_floor=D("0"),
+                            notional_cap=None,
+                            maintenance_margin_rate=D("0.05"),
+                            maximum_leverage=D("5"),
+                        ),
+                    )
+                ),
+            )
+        },
+        costs={"leverage": 10.0},
+    )
+
+    assert [
+        (fill["fill_price"], fill["size"]) for fill in result.metrics["execution_costs"]["fills"]
+    ] == []
+    rejection = next(event for event in events if event["event_type"] == "ORDER_REJECTED")
+    assert rejection["payload"]["reason"] == (
+        "instrument_constraint: position notional permits maximum leverage 5"
+    )
+
+
+def test_market_gap_revalidates_leverage_at_the_actual_fill_notional(monkeypatch):
+    tiers = (
+        MaintenanceMarginTier(D("0"), D("50000"), D("0.004"), maximum_leverage=D("125")),
+        MaintenanceMarginTier(D("50000"), None, D("0.005"), maximum_leverage=D("100")),
+    )
+
+    checked = []
+
+    def validate(_spec, *, notional, leverage):
+        checked.append((notional, leverage))
+        if len(checked) > 1:
+            raise ValueError("position notional permits maximum leverage 100")
+
+    monkeypatch.setattr("koval_backtrader.realistic_broker.validate_initial_leverage", validate)
+    result, events, _ = execute(
+        monkeypatch,
+        [QUIET, (110.0, 111.0, 109.0, 110.0, 1_000.0)],
+        evidence={"instrument_specs": (instrument(margin_tiers=tiers),)},
+        size=490.0,
+        stop=70.0,
+        target=140.0,
+        costs={"leverage": 125.0},
+    )
+
+    assert result.metrics["execution_costs"]["fills"] == []
+    assert len(checked) == 2
+    assert checked[1][0] == D("40425.00")
+    rejection = next(event for event in events if event["event_type"] == "ORDER_REJECTED")
+    assert rejection["payload"]["reason"] == (
+        "instrument_constraint: position notional permits maximum leverage 100"
+    )
+
+
+def test_partial_fills_revalidate_leverage_against_the_resulting_position(monkeypatch):
+    tiers = (
+        MaintenanceMarginTier(D("0"), D("50000"), D("0.004"), maximum_leverage=D("125")),
+        MaintenanceMarginTier(D("50000"), None, D("0.005"), maximum_leverage=D("100")),
+    )
+    proxy = ExecutionProxyConfig(D("1"), "carry", ExecutionLatency())
+
+    checked = []
+
+    def validate(_spec, *, notional, leverage):
+        checked.append((notional, leverage))
+        if len(checked) > 1 and notional >= D("50000"):
+            raise ValueError("position notional permits maximum leverage 100")
+
+    monkeypatch.setattr("koval_backtrader.realistic_broker.validate_initial_leverage", validate)
+    result, events, _ = execute(
+        monkeypatch,
+        [(80.0, 81.0, 79.0, 80.0, 100.0)] + [(100.0, 101.0, 99.0, 100.0, 100.0)] * 6,
+        evidence={
+            "instrument_specs": (instrument(margin_tiers=tiers),),
+            "execution_proxy": proxy,
+        },
+        size=600.0,
+        stop=70.0,
+        target=140.0,
+        costs={"leverage": 125.0},
+    )
+
+    entry_quantity = sum(
+        fill["size"]
+        for fill in result.metrics["execution_costs"]["fills"]
+        if fill["role"] == "entry"
+    )
+    assert entry_quantity == pytest.approx(100.0)
+    assert D("50000.00") in [notional for notional, _ in checked]
+    rejection = next(event for event in events if event["event_type"] == "ORDER_REJECTED")
+    assert rejection["payload"]["reason"] == (
+        "instrument_constraint: position notional permits maximum leverage 100"
+    )

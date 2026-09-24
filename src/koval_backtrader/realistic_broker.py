@@ -21,6 +21,7 @@ from koval.engine.instrument_risk import (
     evaluate_liquidation,
     normalize_order,
     select_instrument_spec,
+    validate_initial_leverage,
 )
 from koval.engine.paper_fills import max_quantity_for_stop_risk
 from koval.engine.run_identity import content_sha256
@@ -377,6 +378,11 @@ class RealisticBroker(ExecutionCostBroker):
         entry = normalize_order(
             **kwargs, side=side, order_type=setup.entry_type, price=Decimal(str(setup.entry_price))
         )
+        validate_initial_leverage(
+            spec,
+            notional=entry.notional,
+            leverage=Decimal(str(self.p.execution_model.leverage)),
+        )
         kwargs["quantity"] = entry.quantity
         closing_side = "sell" if order.isbuy() else "buy"
         stop, target = (
@@ -533,6 +539,23 @@ class RealisticBroker(ExecutionCostBroker):
                 order.reject()
                 self.notify(order)
                 return
+            if spec is not None:
+                try:
+                    resulting_quantity = abs(current.size) + fill_quantity
+                    validate_initial_leverage(
+                        spec,
+                        notional=(
+                            Decimal(str(resulting_quantity))
+                            * Decimal(str(adjusted))
+                            * Decimal(str(spec.contract_size))
+                        ),
+                        leverage=Decimal(str(model.leverage)),
+                    )
+                except ValueError as exc:
+                    order.addinfo(koval_rejection=f"instrument_constraint: {exc}")
+                    order.reject()
+                    self.notify(order)
+                    return
             order.addinfo(koval_fill_quantity=fill_quantity)
             available = (
                 self.account_ledger.balance
