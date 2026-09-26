@@ -1,6 +1,6 @@
 # Execution model
 
-Version 0.13 requires `koval-engine>=0.13.0,<0.14.0`. Baseline corrected parity
+Version 0.12 supports `koval-engine>=0.11.0,<0.13.0`. Baseline corrected parity
 requires engine 0.11.1; explicit runtime boundaries require engine 0.12.
 Engine 0.11.0 retains its historical limits. See
 [runtime-assurance.md](runtime-assurance.md) for windows, terminal policies,
@@ -207,24 +207,12 @@ Funding remains separate from trade price PnL and commission. Empty-series
 coverage is a caller assertion under the engine's normalized contract.
 
 `instrument_specs` selects time-valid tick/step/minimum/price-band evidence.
-When a margin tier supplies `maximum_leverage`, the configured entry leverage
-must not exceed the tier selected by normalized entry notional. The broker
-revalidates at every actual adjusted fill against the resulting position
-notional, including carried partial fills and exact half-open tier boundaries;
-otherwise the entry is rejected as `instrument_constraint`.
 `mark_prices: MarkPriceSeries` additionally enables the engine's single-position
 cross-margin maintenance calculation and liquidation fee. Marks must cover
 every primary bar. Funding precedes liquidation; liquidation precedes protection
 and bypasses the OHLCV volume cap. Only linear base-quantity contracts with
 contract size 1 and quote-asset collateral are supported. This is a normalized subset of venue rules,
 not a claim that all historical exchange filters are represented.
-
-The independent `futures_accounting.py` reference produces Decimal-safe wallet,
-equity, available-balance, initial/maintenance-margin and estimated-liquidation
-vectors for long/short cross and explicitly allocated isolated-margin parity
-tests. The estimate is explicitly not an exchange-reported threshold. The live
-Backtrader execution path remains single-asset cross; multi-asset and hedge modes
-remain unsupported.
 
 `execution_proxy: ExecutionProxyConfig` enables partial fills, a shared
 `volume * maximum_volume_participation` budget, carry/cancel entry remainder

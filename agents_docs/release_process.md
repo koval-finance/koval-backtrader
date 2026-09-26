@@ -9,15 +9,15 @@ distribution metadata, so there is no second copy to drift. There is no
 
 ## Compatibility with the engine
 
-The dependency is a range — currently `koval-engine>=0.13.0,<0.14.0` — never
+The dependency is a range — currently `koval-engine>=0.11.0,<0.13.0` — never
 an exact pin. A plugin that hard-pins one engine patch version forces every
 downstream user into lockstep upgrades.
 
-The range's upper bound is a real compatibility statement covering both the
-engine's public Python API and `ENGINE_PROTOCOL_VERSION`. A protocol bump
-causes `check_protocol_version()` to reject specs, but an API change can break
-the adapter even while that constant stays the same. Test a new engine series
-with the exact installed-pair gate before widening the range.
+The range's upper bound is a real statement: it says this adapter speaks the
+engine's current `ENGINE_PROTOCOL_VERSION`. When the engine bumps that
+constant, `check_protocol_version()` starts rejecting specs, and the correct
+response is a new release of this package with a widened range — not a
+loosened bound hoping for the best.
 
 ## Cutting a release
 
@@ -55,22 +55,22 @@ and verify discovery plus the published engine fixtures from that environment.
 Rebuild after changing any package source. Keep artifacts local; the tag workflow
 builds and publishes independently from the human's committed tree.
 
-For the historical 0.11.1 release, publish engine 0.11.1 first and verify its PyPI availability before
+For 0.11.1, publish engine 0.11.1 first and verify its PyPI availability before
 pushing the plugin tag so the release gate resolves the corrected engine pair.
 The declared floor remains 0.11.0, with its prior graph fallback; complete
 0.11.1 parity acceptance requires engine 0.11.1. Candidate wheel acceptance
 is recorded in [../docs/execution-validation.md](../docs/execution-validation.md).
 Never convert passing build checks into an exchange-fidelity claim.
 
-For 0.13.0, publish engine 0.13.0 first: the exact-pair CI matrix downloads
-that engine wheel and verifies the built plugin on Python 3.11/3.13. The new
-`validate_initial_leverage` import makes older engine versions incompatible.
+For 0.12.1, publish engine 0.12.1 first: the exact-pair CI matrix downloads
+0.11.1, 0.12.0 and 0.12.1 wheels and verifies the built plugin on Python
+3.11/3.13.
 Use [../scripts/verify_pair.py](../scripts/verify_pair.py) with the exact candidate
 wheel before publication; it invokes the complete gate using
 `KOVAL_VERIFY_PYTHON`, checks installed bytes and emits a hash manifest.
-Protocol 2 runtime boundaries remain optional; this release's new engine floor
-is a package compatibility requirement, not a protocol-version bump. Historical
-0.11 and 0.12 acceptance records remain valid only for their recorded pairs.
+Protocol 2 runtime boundaries are optional; the old default path remains
+available on 0.11.1, while 0.12.0 remains in the matrix to protect patch-level
+compatibility. The historical 0.11.0 fallback is not a full parity claim.
 The measured matrix belongs in
 [../docs/execution-validation.md](../docs/execution-validation.md).
 

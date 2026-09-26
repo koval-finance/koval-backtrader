@@ -6,26 +6,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.13.0] - 2026-09-23
-
-### Changed
-
-- `ohlcv_realistic_v2` rejects an entry whose configured leverage exceeds the
-  applicable instrument evidence tier, matching the paired paper broker. The
-  check is repeated at the adjusted actual fill and across partial fills so a
-  gap or accumulated position cannot cross a lower-leverage tier silently.
-- Require `koval-engine>=0.13.0,<0.14.0`: the adapter now imports the new
-  engine leverage-tier validator directly. Older engine wheels cannot load it.
-
-### Added
-
-- An independent Decimal-safe single-position, single-asset cross Futures
-  accounting vector for parity tests against the MIT engine contract. The
-  implementation remains local to this GPL adapter and does not import the
-  engine's accounting calculation.
-- The independent vector also covers explicitly allocated isolated margin,
-  including available balance, local margin equity and liquidation boundary.
-
 ## [0.12.1] - 2026-09-20
 
 ### Execution correctness
@@ -286,8 +266,7 @@ First public release. Extracted from a private monorepo with a clean history.
 - Releases publish to PyPI through Trusted Publishing (OIDC) with PEP 740
   attestations. No long-lived PyPI credential is used.
 
-[Unreleased]: https://github.com/koval-finance/koval-backtrader/compare/v0.13.0...HEAD
-[0.13.0]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.1...v0.13.0
+[Unreleased]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.1...HEAD
 [0.12.1]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/koval-finance/koval-backtrader/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/koval-finance/koval-backtrader/compare/v0.11.0...v0.11.1

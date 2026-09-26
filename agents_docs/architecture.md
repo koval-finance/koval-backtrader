@@ -141,21 +141,11 @@ protection behavior; shared metric formulas do not establish execution parity.
 ## Version 0.11 execution modules
 
 `realistic_broker.py` independently matches v2 orders and resizes partial OCO
-protection. It normalizes entries against time-valid instrument evidence and
-rejects leverage above the selected notional tier both before matching and at
-the adjusted actual fill against the resulting position notional.
-`evidence_execution.py` mutates an incremental account ledger from
+protection. `evidence_execution.py` mutates an incremental account ledger from
 funding, fills and fees. `execution_evidence.py` validates public engine evidence
 and produces JSON replay configuration. `strategy_account.py` binds the graph's
 public 0.11.1 account reader to broker-authoritative snapshots, with the old
 fallback retained for 0.11.0. No strategy or analyzer may book cashflows twice.
-
-`futures_accounting.py` is the adapter-owned independent golden-vector
-implementation for the single-position, single-asset cross and explicitly
-allocated isolated-margin formulas. It keeps realized PnL, trading fees, funding and liquidation fees
-separate and rejects stale mark/risk evidence. It intentionally does not import
-the engine implementation: matching vectors catch drift between runtimes rather
-than proving exchange accuracy.
 
 The runner negotiates capabilities, enforces v2 aligned contiguous data, refuses
 more than two timeframes and prevents trailing HTF bars from replaying a primary

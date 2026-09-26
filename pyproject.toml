@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "koval-backtrader"
-version = "0.13.0"
+version = "0.12.1"
 description = "Backtrader backtest engine for koval-engine: a GPL-3.0 plugin that runs typed strategy graphs through Cerebro."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,7 +29,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "koval-engine>=0.13.0,<0.14.0",
+    "koval-engine>=0.11.0,<0.13.0",
     "backtrader>=1.9.78",
     "numpy>=1.26",
     "pandas>=2.2",
