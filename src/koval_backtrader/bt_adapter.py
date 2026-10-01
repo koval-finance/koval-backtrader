@@ -3,6 +3,7 @@
 # Strategies never import Backtrader; broker implementations live beside this bridge.
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import asdict, replace
 from math import isfinite
 
@@ -94,6 +95,10 @@ class BTStrategyAdapter(bt.Strategy):
             funding_status=getattr(self.broker, "funding_status", "unavailable"),
             daily_baseline_equity=None if boundaries is None else boundaries.daily_baseline_equity,
             peak_equity=None if boundaries is None else boundaries.peak_equity,
+            cash_account=(
+                self.params.market_identity is not None
+                and self.params.market_identity.market == "spot"
+            ),
         )
         if hasattr(self.broker, "bind_data"):
             self.broker.bind_data(self.data)
@@ -408,6 +413,7 @@ class BTStrategyAdapter(bt.Strategy):
         order_fn = self.buy if is_long else self.sell
 
         entry_options = {"_checksubmit": False} if validator is not None else {}
+        entry_options["koval_submitted_timestamp_ms"] = self._strategy.decision_timestamp_ms
         if self.params.runtime_boundaries is not None:
             entry_options["koval_decision_timestamp_ms"] = self._strategy.decision_timestamp_ms
         if setup.entry_type == "market":
@@ -488,6 +494,9 @@ class BTStrategyAdapter(bt.Strategy):
             else {
                 "koval_decision_id": origin_order.info.get("koval_decision_id"),
                 "koval_intent_id": origin_order.info.get("koval_intent_id"),
+                "koval_submitted_timestamp_ms": num2utc_ms(origin_order.executed.dt)
+                if origin_order.executed.dt
+                else None,
             }
         )
         sl = setup.stop_loss
@@ -580,6 +589,19 @@ class BTStrategyAdapter(bt.Strategy):
             stop_price=target_sl,
             target_price=target_tp,
         )
+        origin = {
+            key: self._stop_order.info.get(key) for key in ("koval_decision_id", "koval_intent_id")
+        }
+        origin["koval_submitted_timestamp_ms"] = self._strategy.decision_timestamp_ms
+        if sl_changed:
+            for trade in self._trade_map.values():
+                trade.setdefault("sl_history", []).append(
+                    {
+                        "timestamp_ms": self._strategy.decision_timestamp_ms,
+                        "previous_stop_loss": current_sl,
+                        "stop_loss": target_sl,
+                    }
+                )
         self._account.on_stop_moved(target_sl)
         updated = getattr(self.broker, "protection_updated", None)
         if updated is not None:
@@ -591,6 +613,7 @@ class BTStrategyAdapter(bt.Strategy):
             size=size,
             _checksubmit=False,
             koval_role="stop_loss",
+            **origin,
         )
         if target_tp is not None:
             self._tp_order = order_fn(
@@ -600,6 +623,7 @@ class BTStrategyAdapter(bt.Strategy):
                 oco=self._stop_order,
                 _checksubmit=False,
                 koval_role="take_profit",
+                **origin,
             )
         else:
             self._tp_order = None
@@ -842,7 +866,7 @@ class BTStrategyAdapter(bt.Strategy):
                 self._pending_setup = None
 
         elif trade.isclosed:
-            stored = self._trade_map.get(trade.ref, {})
+            stored = self._trade_map.pop(trade.ref, {})
             setup = stored.get("setup")
             # Snapshot both before the reset below: the closed-trade event is
             # emitted afterwards and has to report what actually happened, not
@@ -865,6 +889,8 @@ class BTStrategyAdapter(bt.Strategy):
             research = self._close_research_record()
             self._trade_info[trade.ref] = {
                 **research,
+                "decision_context": deepcopy(getattr(setup, "decision_context", None)),
+                "sl_history": deepcopy(stored.get("sl_history", [])),
                 "size": stored.get("size", self._pending_entry_size),
                 "exit_reason": _EXIT_REASON_LABELS.get(exit_reason, "Manual"),
                 "exit_price": exit_price,

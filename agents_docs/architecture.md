@@ -158,6 +158,16 @@ slice the MIT contract) and `terminal_execution.py` (finish through actual
 broker notifications without another candle). `execution_trace.py` records
 decision inputs and run-local links and exports authoritative broker/account
 state; it never computes cash. Both costed profiles export the audit in metrics.
+
+For a canonical Spot identity, `ExecutionAccount` adapts the shared engine
+snapshot's `free_margin` to `balance - margin_used`: unspent quote cash after
+fees and inventory purchases. The shared `balance` is realized capital and
+`margin_used` is held inventory's acquisition cost. Mark-to-market PnL affects
+equity but cannot fund another Spot purchase. Futures keep the shared engine
+margin calculation. `tests/test_execution_account.py` exercises both costed
+profiles with rising and falling prices through the actual strategy bridge.
+`RealisticBroker` uses the same cash boundary for partial-entry affordability;
+only derivative markets include unrealized PnL as collateral.
 See [../docs/runtime-assurance.md](../docs/runtime-assurance.md).
 
 ## Update this file when
@@ -198,3 +208,13 @@ and explicitly unmeasured exchange accuracy. The original decoder remains for
 older supported engines. No numerical accuracy or error ceiling is inferred.
 Local candidate wheels must be rebuilt after edits; production release is a
 separate human action.
+
+## Trade decision evidence
+
+The optional MIT `TradeSetup.decision_context` is copied at accepted intent time
+into the execution trace and raw trade. The analyzer joins entry orders through
+actual fill/trade IDs. Stop replacements keep the original decision/intent IDs
+and append observed stop changes. Entry fill sizing and protective fill context
+are read from the same broker branch that executed the fill; no second evaluator
+or ledger is allowed. Keep these snapshots detached from mutable setup state.
+Regression coverage: `tests/test_trade_decision_evidence.py`.

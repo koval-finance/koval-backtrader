@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+from copy import deepcopy
 from datetime import UTC, datetime
 
 import backtrader as bt
@@ -93,7 +94,11 @@ class TradeListAnalyzer(bt.Analyzer):
             trade_fills = getattr(self.strategy.broker, "trade_fills", None)
             if trade_fills is not None:
                 enrich_closed_trade(trade_record, trade_fills[trade_record["id"]])
-            self.trades.append(trade_record)
+            entry_fills = [
+                f for f in (trade_fills or {}).get(trade_record["id"], []) if f["role"] == "entry"
+            ]
+            trade_record["entry_order_id"] = entry_fills[0]["order_id"] if entry_fills else None
+            self.trades.append(deepcopy(trade_record))
 
     def get_analysis(self):
         return self.trades

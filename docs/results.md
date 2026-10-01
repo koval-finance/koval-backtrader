@@ -201,7 +201,26 @@ One dictionary per closed trade, in the order they closed.
 | `sl_calculation` | str or null | The strategy's explanation of how the stop was derived, if it set `sl_calc_expr`. |
 | `tp_calculation` | str or null | Same for the target. |
 | `why_entry` | list[str] | The strategy's stated reasons for entering. Graph strategies fill this only when a block produced a reasoning chain. |
-| `indicators_at_entry` | dict | Indicator values captured at entry, if the strategy provided them. |
+| `indicators_at_entry` | dict | Indicator values captured at the entry decision, if the strategy provided them. |
+| `decision_context` | dict or null | Detached engine decision snapshot, version `koval_trade_decision_context_v1`. Includes node parameters, actual observations and predicates, signal/decision times, and initial risk. Unsupported nodes are explicitly incomplete. |
+| `entry_order_id` | string or null | Actual entry order identity from the fill ledger; never inferred from trade-array position. |
+| `sl_history` | list | Recorded stop replacements with `timestamp_ms`, `previous_stop_loss`, and `stop_loss`. Empty means no recorded replacements. |
+
+The entry decision remains unchanged when an order is delayed, partially filled,
+or protected by a replacement stop. Replacement orders retain the originating
+decision and intent IDs. Fill records include cumulative and remaining order
+quantity. Entry fills expose `sizing_adjustment` from the actual broker sizing
+calculation: requested quantity, risk budget, cost-adjusted and participation
+quantities, and available/required cash. These are observations, not another
+sizing calculation or monetary ledger.
+
+Protective fills include `protection_context`: whether SL and TP were both
+touched, whether the open gapped through the stop, and the selected protection
+rule. OHLCV cannot establish the true intrabar path; `conservative_stop_first`
+is a model assumption. Reference/trigger prices and actual modeled fill prices
+remain separate. Spread and slippage are already in the fill price; do not
+subtract them again from net PnL. Older results and custom strategies may have
+no decision snapshot; absent observations must not be reconstructed as recorded.
 
 Every trade also carries the research fields below, in both models:
 
@@ -322,6 +341,15 @@ One point per bar of the lowest timeframe, including bars with no position:
 `equity` is the broker's account value: cash plus the mark-to-market value of
 any open position. The list length equals the number of candles in the
 primary feed.
+
+For a declared Spot market, account snapshots expose the unspent quote cash
+in `free_margin`. `balance` retains its shared meaning of realized capital
+(starting capital plus realized PnL minus fees); `margin_used` is the acquisition
+cost of the remaining inventory. Thus Spot `free_margin = balance - margin_used`,
+while equity includes the current market value of inventory. Unrealized gains
+and losses do not create or consume quote cash. Fees in these profiles are
+charged in quote currency; base-asset fees and third-asset discounts are not
+modeled by this cash-account view.
 
 Note the asymmetry with trade timestamps: **equity timestamps carry no `Z`
 suffix**, because they come from Backtrader's naive datetimes. They are UTC.

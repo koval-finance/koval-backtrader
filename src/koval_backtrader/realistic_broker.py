@@ -534,14 +534,30 @@ class RealisticBroker(ExecutionCostBroker):
                 self.notify(order)
                 return
             order.addinfo(koval_fill_quantity=fill_quantity)
+            unrealized_collateral = current.size * (price - current.price)
+            if model.market is not None and model.market.market == "spot":
+                unrealized_collateral = 0.0
             available = (
                 self.account_ledger.balance
-                + current.size * (price - current.price)
+                + unrealized_collateral
                 - abs(current.size) * current.price / model.leverage
             )
             required = (
                 fill_quantity * adjusted / model.leverage
                 + fill_quantity * adjusted * fee.rate_bps / 10000
+            )
+            order.addinfo(
+                koval_sizing_adjustment={
+                    "requested_remaining_quantity": requested,
+                    "risk_budget_remaining": risk_budget,
+                    "quantity_after_risk": quantity,
+                    "quantity_after_participation": fill_quantity,
+                    "available_cash": available,
+                    "required_cash": required,
+                    "entry_reference_price": price,
+                    "entry_fill_price": adjusted,
+                    "stop_reference": setup.stop_loss,
+                }
             )
             if required > available:
                 order.addinfo(koval_rejection="insufficient_margin")
@@ -622,10 +638,13 @@ class RealisticBroker(ExecutionCostBroker):
         selected = None
         if breach is not None:
             selected = stop_order if breach == "stop_loss" else target_order
+            protection_rule = "entry_price_breached_protection"
         elif allow_open_gap and stop_gap:
             selected, reference = stop_order, open_
+            protection_rule = "stop_gap_at_open"
         elif hit_stop:
             selected, reference = stop_order, stop
+            protection_rule = "conservative_stop_first" if hit_target else "stop_touched"
             if hit_target:
                 self.ambiguities.append(
                     {
@@ -643,8 +662,20 @@ class RealisticBroker(ExecutionCostBroker):
         elif hit_target:
             target_gap = open_ >= target if is_long else open_ <= target
             selected, reference = target_order, open_ if target_gap else target
+            protection_rule = "target_gap_at_open" if target_gap else "target_touched"
         if selected is None:
             return
+        selected.addinfo(
+            koval_protection_evidence={
+                "stop_loss": stop,
+                "take_profit": target,
+                "both_levels_touched": bool(hit_stop and hit_target),
+                "gap_through_stop": bool(allow_open_gap and stop_gap),
+                "entry_breach": breach,
+                "selected": selected.info.get("koval_role"),
+                "rule": protection_rule,
+            }
+        )
         # A directly matched child may still be in the pending queue. Remove
         # it before Backtrader's OCO callback, which cancels queued siblings.
         queued = False

@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Declared Spot account snapshots now expose unspent quote cash through
+  `free_margin`. Unrealized gains and losses change equity, not the cash
+  available to the strategy. Futures margin semantics are unchanged.
+- Spot partial-entry remainders use unspent quote cash for affordability;
+  an unrealized loss no longer rejects a purchase that the account can fund.
+
 ## [0.12.1] - 2026-09-20
 
 ### Execution correctness

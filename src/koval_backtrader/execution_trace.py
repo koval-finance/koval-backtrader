@@ -46,6 +46,20 @@ class ExecutionTrace:
         )
 
     def begin_intent(self, setup):
+        context = deepcopy(getattr(setup, "decision_context", None))
+        if context is not None and self.decisions:
+            decision = self.decisions[-1]
+            context.update(
+                decision_id=self.decision_id,
+                signal_bar_open_ms=decision["bar_timestamp_ms"],
+                decision_timestamp_ms=decision["decision_timestamp_ms"],
+                history_start_ms=decision["history_start_ms"],
+                history_end_ms=decision["history_end_ms"],
+                history_bars=decision["history_bars"],
+            )
+            setup.decision_context = deepcopy(context)
+            decision["decision_context"] = deepcopy(context)
+            decision["indicators"] = deepcopy(setup.indicators_at_entry)
         self.intent = {
             "intent_id": f"intent-{len(self.intents) + 1}",
             "decision_id": self.decision_id,
@@ -85,6 +99,7 @@ class ExecutionTrace:
                 "role": order.info.get("koval_role", "entry"),
                 "requested_quantity": abs(float(order.created.size)),
                 "requested_price": float(order.created.price),
+                "submitted_timestamp_ms": order.info.get("koval_submitted_timestamp_ms"),
             }
         self.orders[order_id].update(
             status=order.getstatusname().lower(),

@@ -244,6 +244,7 @@ class BacktraderBacktestEngine:
             event_sink=_make_sink(on_event),
             execution_metadata=metadata,
             primary_timeframe_ms=primary_ms,
+            strategy_config={"timeframe": timeframes[0]},
             htf_timeframe_ms=htf_ms,
             market_identity=model.market,
             runtime_boundaries=boundaries,

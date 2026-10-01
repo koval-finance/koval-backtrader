@@ -15,7 +15,7 @@ requested is sizing from a price it did not get.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 
 from koval.engine.account_ledger import AccountLedger
 from koval.engine.account_state import AccountSnapshot, PlatformAccountState
@@ -150,6 +150,7 @@ class ExecutionAccount:
         funding_status: str = FUNDING_STATUS_UNAVAILABLE,
         daily_baseline_equity: float | None = None,
         peak_equity: float | None = None,
+        cash_account: bool = False,
     ) -> None:
         self._state = PlatformAccountState(
             starting_balance=starting_balance,
@@ -158,6 +159,7 @@ class ExecutionAccount:
             ledger=ledger if ledger is not None else IncrementalAccountLedger(starting_balance),
         )
         self._owns_ledger = ledger is None
+        self._cash_account = cash_account
         self._funding_status = funding_status
         self._commission_bps = float(commission_bps)
         self._adjustment_fraction = float(adjustment_fraction)
@@ -214,6 +216,10 @@ class ExecutionAccount:
 
     def snapshot(self) -> AccountInputs:
         snap = self._state.snapshot()
+        if self._cash_account:
+            # Spot cannot spend unrealized profit. The ledger retains realized
+            # capital; margin_used is the acquisition cost of held inventory.
+            snap = replace(snap, free_margin=snap.balance - snap.margin_used)
         position = snap.open_position
         return AccountInputs(
             **{field.name: getattr(snap, field.name) for field in fields(AccountSnapshot)},

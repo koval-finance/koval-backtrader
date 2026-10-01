@@ -15,10 +15,12 @@ same order, and injects the resulting snapshot. These tests pin that.
 from __future__ import annotations
 
 import math
+from decimal import Decimal
 
 import numpy as np
 import pytest
 from koval.engine.backtest_engine import EngineRunSpec
+from koval.engine.execution_proxy import ExecutionLatency, ExecutionProxyConfig
 from koval.strategy.base.declarative import DeclarativeStrategy
 from koval.strategy.base.trade_setup import TradeSetup
 
@@ -113,6 +115,77 @@ def test_the_snapshot_is_available_to_a_legacy_run_too(monkeypatch):
     _, _, seen = run(monkeypatch, [SIGNAL, SIGNAL], config=None)
     assert seen[0].balance == 10_000.0
     assert seen[0].position is None
+
+
+@pytest.mark.parametrize("version", ["ohlcv_fixed_v1", "ohlcv_realistic_v2"])
+@pytest.mark.parametrize("mark", [95.0, 110.0])
+def test_spot_available_cash_excludes_unrealized_pnl(monkeypatch, version, mark):
+    config = fixed_config(version=version, commission_bps=10.0)
+    config.update(
+        exchange_type="spot",
+        market={
+            "exchange": "binance",
+            "market": "spot",
+            "canonical_symbol": "BTCUSDT",
+            "contract_type": "spot",
+        },
+    )
+    result, _, seen = run(
+        monkeypatch,
+        [SIGNAL, (100.0, max(101.0, mark), min(99.0, mark), mark, 1000.0)],
+        config=config,
+    )
+
+    # V2 caps the 20 quote risk budget at loss-to-stop including both fees:
+    # 100.2 - 89.82 + (100.2 + 89.82) * 0.001 = 10.57002 per base unit.
+    quantity = 2.0 if version == "ohlcv_fixed_v1" else 20.0 / 10.57002
+    cash = 10_000 - quantity * 100.2 * 1.001
+    account = seen[-1]
+    assert account.position.quantity == pytest.approx(quantity)
+    assert account.free_margin == pytest.approx(cash, abs=1e-8)
+    assert account.equity == pytest.approx(cash + quantity * mark)
+    assert result.metrics["execution_audit"]["terminal_account"]["free_margin"] == pytest.approx(
+        cash, abs=1e-8
+    )
+
+
+@pytest.mark.parametrize("market, expected_fills", [("spot", 2), ("future", 1)])
+def test_partial_entry_affordability_uses_cash_for_spot_and_equity_for_futures(
+    monkeypatch, market, expected_fills
+):
+    config = fixed_config(version="ohlcv_realistic_v2", commission_bps=10.0)
+    config.update(
+        exchange_type=market,
+        market={
+            "exchange": "binance",
+            "market": market,
+            "canonical_symbol": "BTCUSDT",
+            "contract_type": "spot" if market == "spot" else "perpetual",
+        },
+        execution_proxy=ExecutionProxyConfig(Decimal("0.01"), "carry", ExecutionLatency()),
+    )
+    result, events, seen = run(
+        monkeypatch,
+        [(price, price + 1, price - 1, price, 9000) for price in [100, 100, 94, 94]],
+        config=config,
+        size=99.8,
+    )
+
+    fills = result.metrics["execution_audit"]["fills"]
+    assert len(fills) == expected_fills
+    assert fills[0]["size"] == pytest.approx(90)
+    if market == "spot":
+        remaining = 998 / 10.57002 - 90
+        assert fills[1]["size"] == pytest.approx(remaining)
+        assert fills[1]["fill_price"] == pytest.approx(94.188)
+        assert seen[-1].free_margin == pytest.approx(972.982 - remaining * 94.188 * 1.001)
+        assert not any(event["event_type"] == "ORDER_REJECTED" for event in events)
+    else:
+        assert any(
+            event["event_type"] == "ORDER_REJECTED"
+            and event["payload"]["reason"] == "insufficient_margin"
+            for event in events
+        )
 
 
 def test_account_value_still_agrees_with_the_snapshot_equity(monkeypatch):

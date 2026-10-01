@@ -144,6 +144,14 @@ class ExecutionCostBroker(bt.brokers.BackBroker):
                 "slippage": "configured",
             },
         }
+        protection = order.info.get("koval_protection_evidence")
+        if protection is not None:
+            record["protection_context"] = dict(protection)
+        record["cumulative_quantity"] = abs(float(order.executed.size))
+        record["remaining_quantity"] = abs(float(order.executed.remsize))
+        adjustment = order.info.get("koval_sizing_adjustment")
+        if role == "entry" and adjustment is not None:
+            record["sizing_adjustment"] = dict(adjustment)
         self.execution_fills.append(record)
         self.order_fills.setdefault(order.ref, []).append(record)
         self.trade_fills.setdefault(self._execution_trade_id, []).append(record)
