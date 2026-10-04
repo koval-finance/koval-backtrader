@@ -11,6 +11,7 @@ class ExecutionTrace:
     def __init__(self):
         self.decisions = []
         self.intents = []
+        self.position_exit_intents = []
         self._intents_by_id = {}
         self.orders = {}
         self.account_snapshots = []
@@ -76,6 +77,43 @@ class ExecutionTrace:
             intent.update(status="rejected", reason=payload.get("reason"))
             payload.update(intent_id=intent["intent_id"], decision_id=intent["decision_id"])
 
+    def begin_position_exit(self, strategy, request):
+        fields = (
+            "symbol",
+            "position_id",
+            "position_side",
+            "quantity_fraction",
+            "order_type",
+            "reason",
+            "bar_index",
+            "timestamp_ms",
+            "source_node_id",
+        )
+        context = deepcopy(request.decision_context) or {}
+        decision = self.decisions[-1]
+        context.update(
+            decision_id=self.decision_id,
+            position_id=request.position_id,
+            source_node_id=request.source_node_id,
+            bar_index=request.bar_index,
+            timestamp_ms=request.timestamp_ms,
+            signal_bar_open_ms=request.timestamp_ms,
+            decision_timestamp_ms=decision["decision_timestamp_ms"],
+            history_start_ms=decision["history_start_ms"],
+            history_end_ms=decision["history_end_ms"],
+            history_bars=decision["history_bars"],
+        )
+        intent = {
+            "intent_id": f"position-exit-{len(self.position_exit_intents) + 1}",
+            "decision_id": self.decision_id,
+            "status": "requested",
+            "request": {key: getattr(request, key) for key in fields},
+            "exit_decision_context": context,
+        }
+        decision["exit_decision_context"] = context
+        self.position_exit_intents.append(intent)
+        return intent
+
     def record_order(self, strategy, order):
         if order is None:
             return
@@ -106,11 +144,29 @@ class ExecutionTrace:
             cumulative_quantity=abs(float(order.executed.size)),
             remaining_quantity=abs(float(order.executed.remsize)),
         )
+        setup = order.info.get("koval_setup")
+        if setup is not None or order.info.get("koval_take_profit_mode") is not None:
+            self.orders[order_id]["take_profit_mode"] = (
+                getattr(setup, "take_profit_mode", "bracket")
+                if setup is not None
+                else order.info["koval_take_profit_mode"]
+            )
         intent = self._intents_by_id.get(self.orders[order_id]["intent_id"])
         if order.info.get("koval_setup") is not None and intent is not None:
             status = order.getstatusname().lower()
             status = {"completed": "filled", "margin": "rejected"}.get(status, status)
             intent.update(order_id=order_id, status=status)
+        exit_intent_id = order.info.get("koval_exit_intent_id")
+        if exit_intent_id is not None:
+            self.orders[order_id].update(
+                exit_intent_id=exit_intent_id, position_id=order.info.get("koval_position_id")
+            )
+            for exit_intent in self.position_exit_intents:
+                if (
+                    exit_intent["intent_id"] == exit_intent_id
+                    and exit_intent["status"] != "completed"
+                ):
+                    exit_intent.update(status=order.getstatusname().lower(), order_id=order_id)
 
     def export(self, strategy):
         # OCO resizing changes a sibling's remaining quantity without emitting
@@ -131,6 +187,8 @@ class ExecutionTrace:
                 "incomplete_reasons": reasons,
                 "decisions": self.decisions,
                 "intents": self.intents,
+                "position_exit_intents": self.position_exit_intents,
+                "pending_position_exit": strategy._position_exit_intent,
                 "orders": list(self.orders.values()),
                 "fills": fills,
                 "ledger": strategy._account.ledger_entries(),

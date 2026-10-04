@@ -9,7 +9,7 @@ never the implementation of a historical run.
 from collections import deque
 from dataclasses import replace
 from decimal import ROUND_DOWN, Decimal
-from math import isclose, isfinite
+from math import isclose, isfinite, ulp
 
 import backtrader as bt
 from koval.engine.execution_proxy import (
@@ -37,6 +37,7 @@ class RealisticBroker(ExecutionCostBroker):
         self._data = None
         self._liquidity = None
         self._exit_bar = None
+        self._last_exit_role = None
         self._protection_active_ms = None
         self._order_ids = {}
         self._last_primary_timestamp = None
@@ -73,6 +74,11 @@ class RealisticBroker(ExecutionCostBroker):
             )
             self.execution.settle_funding(self, self._data)
             self._liquidate()
+            # Accepted closes are already in pending (_checksubmit=False).
+            # Match only gaps before their open fill; intrabar protection follows.
+            for order in list(self.pending):
+                if order is not None and order.alive() and order.info.get("koval_role") == "signal":
+                    self._match_signal_open(order)
         priority = {"stop_loss": 0, "take_profit": 1}
         self.pending = deque(
             sorted(self.pending, key=lambda order: priority.get(order.info.get("koval_role"), 2))
@@ -93,6 +99,42 @@ class RealisticBroker(ExecutionCostBroker):
                 sign = 1 if leg.isbuy() else -1
                 leg.executed.remsize = sign * quantity
                 leg.created.size = leg.executed.size + sign * quantity
+
+    def _match_signal_open(self, order):
+        timestamp = num2utc_ms(order.data.datetime[0])
+        if order.info.get("koval_signal_matched_ms") == timestamp:
+            return
+        if timestamp <= num2utc_ms(order.created.dt):
+            return
+        # Signal latency cannot delay protection that is already active.
+        if (
+            order.info.get("koval_position_id") != self._execution_trade_id
+            or self.positions[order.data].size <= 0
+        ):
+            self.cancel(order)
+            return
+        self._match_protection(order.owner, allow_open_gap=True, open_only=True)
+        if not self.positions[order.data].size or not order.alive():
+            return
+        decision = order.info.get("koval_decision_timestamp_ms")
+        if decision is not None and timestamp < decision:
+            return
+        proxy = self.execution.evidence.execution_proxy
+        if proxy is not None:
+            if "koval_timeline" not in order.info:
+                order.addinfo(
+                    koval_timeline=execution_timeline(
+                        decision if decision is not None else num2utc_ms(order.created.dt),
+                        proxy.latency,
+                    )
+                )
+            if timestamp < order.info["koval_timeline"].fill_eligible_timestamp_ms:
+                return
+        order.addinfo(koval_signal_matched_ms=timestamp)
+        self.pending.remove(order)
+        self._execute(order, ago=0, price=float(order.data.open[0]))
+        if order.alive():
+            self.pending.append(order)
 
     def _liquidate(self):
         data = self._data
@@ -261,6 +303,7 @@ class RealisticBroker(ExecutionCostBroker):
             )
         if role == "exit":
             self._exit_bar = record["timestamp_ms"]
+            self._last_exit_role = order.info.get("koval_role")
             pending_entry = order.owner._entry_order
             if pending_entry is not None and pending_entry.alive():
                 self.cancel(pending_entry)
@@ -275,7 +318,12 @@ class RealisticBroker(ExecutionCostBroker):
             record["cashflow_sequences"].append(entry.sequence)
 
     def validate_entry(self, setup, size):
-        values = (setup.entry_price, setup.stop_loss, setup.take_profit, size)
+        disabled = getattr(setup, "take_profit_mode", "bracket") == "disabled"
+        if disabled and setup.take_profit is not None:
+            raise ValueError("disabled take profit conflicts with target")
+        values = (setup.entry_price, setup.stop_loss, size) + (
+            () if disabled else (setup.take_profit,)
+        )
         if setup.entry_type not in {"market", "limit", "stop"} or setup.direction not in {
             "long",
             "short",
@@ -284,9 +332,17 @@ class RealisticBroker(ExecutionCostBroker):
         if any(value is None or not isfinite(value) or value <= 0 for value in values):
             raise ValueError("invalid order: prices and quantity must be positive and finite")
         valid = (
-            (setup.stop_loss < setup.entry_price < setup.take_profit)
-            if setup.direction == "long"
-            else (setup.take_profit < setup.entry_price < setup.stop_loss)
+            (
+                setup.stop_loss < setup.entry_price
+                if setup.direction == "long"
+                else setup.entry_price < setup.stop_loss
+            )
+            if disabled
+            else (
+                (setup.stop_loss < setup.entry_price < setup.take_profit)
+                if setup.direction == "long"
+                else (setup.take_profit < setup.entry_price < setup.stop_loss)
+            )
         )
         if not valid:
             raise ValueError("invalid order: protection must bracket the entry")
@@ -304,7 +360,9 @@ class RealisticBroker(ExecutionCostBroker):
                 timestamp_ms=num2utc_ms(owner.data.datetime[0]),
             )
             stop, target = (
-                float(
+                None
+                if price is None
+                else float(
                     normalize_order(
                         spec,
                         side="sell" if owner.position.size > 0 else "buy",
@@ -326,6 +384,9 @@ class RealisticBroker(ExecutionCostBroker):
             )
 
     def _try_exec(self, order):
+        if order.info.get("koval_role") == "signal":
+            self._match_signal_open(order)
+            return
         if order.info.get("koval_role") in {"stop_loss", "take_profit"}:
             self._match_protection(order.owner, allow_open_gap=True)
             return
@@ -380,7 +441,9 @@ class RealisticBroker(ExecutionCostBroker):
         kwargs["quantity"] = entry.quantity
         closing_side = "sell" if order.isbuy() else "buy"
         stop, target = (
-            normalize_order(
+            None
+            if price is None
+            else normalize_order(
                 **kwargs, side=closing_side, order_type="stop", price=Decimal(str(price))
             )
             for price in (setup.stop_loss, setup.take_profit)
@@ -389,7 +452,7 @@ class RealisticBroker(ExecutionCostBroker):
             setup,
             entry_price=float(entry.price),
             stop_loss=float(stop.price),
-            take_profit=float(target.price),
+            take_profit=None if target is None else float(target.price),
             size=float(entry.quantity),
         )
         order.addinfo(koval_setup=normalized, koval_instrument=spec)
@@ -404,6 +467,13 @@ class RealisticBroker(ExecutionCostBroker):
         actual = ago is not None and price is not None
         if actual:
             requested = abs(order.executed.remsize)
+            if not actual_entry:
+                position = self.positions[order.data]
+                if not position or (order.isbuy() == (position.size > 0)):
+                    return
+                requested = min(requested, abs(position.size))
+                order.executed.remsize = (-1 if position.size > 0 else 1) * requested
+                order.created.size = order.executed.size + order.executed.remsize
             allocated = requested
             if (
                 self._liquidity is not None
@@ -432,13 +502,19 @@ class RealisticBroker(ExecutionCostBroker):
                     else units.to_integral_value(rounding=ROUND_DOWN)
                 )
                 allocated = min(requested, float(lots * step))
+            # Decimal bar budgets and binary position arithmetic can differ by
+            # one representable step after several partial closes. Complete that
+            # residual without treating a genuine small holding as roundoff.
+            if not actual_entry and allocated > 0 and requested - allocated <= 2 * ulp(requested):
+                allocated = requested
             if allocated <= 0:
                 return
             proxy = self.execution.evidence.execution_proxy
             timeline = order.info.get("koval_timeline")
             decision = (
                 timeline.decision_timestamp_ms
-                if timeline is not None and actual_entry
+                if timeline is not None
+                and (actual_entry or order.info.get("koval_role") == "signal")
                 else num2utc_ms(order.data.datetime[0])
             )
             volume = 0.0 if order.info.get("koval_terminal") else float(order.data.volume[0])
@@ -600,25 +676,39 @@ class RealisticBroker(ExecutionCostBroker):
             # Contain at the available market reference, not a stale trigger.
             fill = order.executed.price
             is_long = order.isbuy()
-            stop, target = owner._stop_order.price, owner._tp_order.price
+            stop = owner._stop_order.price
+            target = None if owner._tp_order is None else owner._tp_order.price
             breach = (
                 "stop_loss"
                 if (fill <= stop if is_long else fill >= stop)
                 else "take_profit"
-                if (fill >= target if is_long else fill <= target)
+                if target is not None and (fill >= target if is_long else fill <= target)
                 else None
             )
             self._match_protection(owner, allow_open_gap=False, breach=breach, reference=price)
             if order.alive() and proxy is not None and proxy.entry_remainder_policy == "cancel":
                 order.cancel()
                 self.notify(order)
+        elif actual and order.info.get("koval_role") == "signal":
+            if self.positions[order.data].size:
+                self._resize_protection(order.owner)
+            else:
+                for leg in (order.owner._stop_order, order.owner._tp_order):
+                    if leg is not None and leg.alive():
+                        self.cancel(leg)
+        if actual and not actual_entry and not self.positions[order.data].size:
+            signal = order.owner._signal_order
+            if signal is not None and signal is not order and signal.alive():
+                self.cancel(signal)
         return result
 
-    def _match_protection(self, owner, *, allow_open_gap, breach=None, reference=None):
+    def _match_protection(
+        self, owner, *, allow_open_gap, breach=None, reference=None, open_only=False
+    ):
         data = owner.data
         position = self.positions[data]
         timestamp = num2utc_ms(data.datetime[0])
-        if self._exit_bar == timestamp:
+        if self._exit_bar == timestamp and self._last_exit_role != "signal":
             return
         if (
             breach is None
@@ -631,10 +721,12 @@ class RealisticBroker(ExecutionCostBroker):
             return
         is_long = position.size > 0
         open_, high, low = float(data.open[0]), float(data.high[0]), float(data.low[0])
-        stop, target = stop_order.price, target_order.price
+        stop = stop_order.price
+        target = None if target_order is None or not target_order.alive() else target_order.price
         stop_gap = open_ <= stop if is_long else open_ >= stop
         hit_stop = low <= stop if is_long else high >= stop
-        hit_target = high >= target if is_long else low <= target
+        hit_target = target is not None and (high >= target if is_long else low <= target)
+        target_gap = target is not None and (open_ >= target if is_long else open_ <= target)
         selected = None
         if breach is not None:
             selected = stop_order if breach == "stop_loss" else target_order
@@ -642,6 +734,11 @@ class RealisticBroker(ExecutionCostBroker):
         elif allow_open_gap and stop_gap:
             selected, reference = stop_order, open_
             protection_rule = "stop_gap_at_open"
+        elif open_only and allow_open_gap and target_gap:
+            selected, reference = target_order, open_
+            protection_rule = "target_gap_at_open"
+        elif open_only:
+            return
         elif hit_stop:
             selected, reference = stop_order, stop
             protection_rule = "conservative_stop_first" if hit_target else "stop_touched"
@@ -669,7 +766,7 @@ class RealisticBroker(ExecutionCostBroker):
             koval_protection_evidence={
                 "stop_loss": stop,
                 "take_profit": target,
-                "both_levels_touched": bool(hit_stop and hit_target),
+                "both_levels_touched": False if open_only else bool(hit_stop and hit_target),
                 "gap_through_stop": bool(allow_open_gap and stop_gap),
                 "entry_breach": breach,
                 "selected": selected.info.get("koval_role"),

@@ -35,8 +35,8 @@ in either direction, so a caller never links Backtrader by accident.
 
 ```
 src/koval_backtrader/
-├── backtest_runner.py   350 lines  the plugin: spec in, result out
-├── bt_adapter.py        1022 lines  DeclarativeStrategy → bt.Strategy bridge
+├── backtest_runner.py   375 lines  the plugin: spec in, result out
+├── bt_adapter.py        1161 lines  DeclarativeStrategy → bt.Strategy bridge
 ├── bt_analyzers.py      131 lines  trade list and equity curve extraction
 └── oco_patch.py         148 lines  the Backtrader OCO bug fix
 ```
@@ -47,6 +47,7 @@ modules import Backtrader; evidence and identity modules use pure engine contrac
 | Module | Responsibility |
 |---|---|
 | `execution_config.py` | Validate settings, resolve legacy fees and produce a frozen model |
+| `position_exit.py` | Historical feature negotiation and stop-only update validation |
 | `realistic_broker.py` | Independent v2 matching, partial lifecycle, volume budget and liquidation |
 | `evidence_execution.py` | Funding cursor, evidence fees and actual cashflow ledger |
 | `execution_evidence.py` | Strict typed/JSON normalized evidence validation and replay |

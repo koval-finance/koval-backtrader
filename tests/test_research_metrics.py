@@ -319,3 +319,16 @@ def test_cost_totals_include_open_fills_but_ratio_uses_closed_fills(monkeypatch)
     assert costs["cost_over_gross_pct"] == pytest.approx(
         100 * closed_cost / abs(trade["gross_price_pnl"])
     )
+
+
+def test_only_complete_signal_exits_count_as_signal_closed_research(monkeypatch):
+    from tests.test_position_exit import unsupported_position_features
+
+    if unsupported_position_features():
+        return
+    from tests.test_position_exit import QUIET, run_exit_probe
+
+    signal, _, _, _ = run_exit_probe(monkeypatch, [QUIET, QUIET, QUIET])
+    protective, _, _, _ = run_exit_probe(monkeypatch, [QUIET, QUIET, (70, 75, 65, 70, 100)])
+    assert signal.metrics["research"]["fully_signal_closed_trades"] == 1
+    assert protective.metrics["research"]["fully_signal_closed_trades"] == 0

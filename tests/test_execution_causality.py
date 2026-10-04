@@ -227,3 +227,23 @@ def test_funding_inside_final_execution_bar_is_not_silently_omitted(monkeypatch)
     )
     with pytest.raises(ValueError, match="funding.*execution.*grid"):
         execute(monkeypatch, [QUIET, QUIET], size=1, evidence={"funding": funding})
+
+
+def test_signal_open_fill_is_invariant_to_future_intrabar_extremes(monkeypatch):
+    from tests.test_position_exit import unsupported_position_features
+
+    if unsupported_position_features():
+        return
+    from tests.test_position_exit import QUIET as quiet
+    from tests.test_position_exit import exits, run_exit_probe
+
+    outcomes = []
+    for high, low, close in ((101, 99, 100), (150, 50, 110), (105, 80, 90)):
+        result, _, _, _ = run_exit_probe(
+            monkeypatch, [quiet, quiet, (100, high, low, close, 100)], stop=95
+        )
+        fill = exits(result)[0]
+        outcomes.append(
+            (fill["reference_price"], fill["fill_price"], fill["size"], fill["commission"])
+        )
+    assert outcomes == [(100, 100, 1, 0)] * 3

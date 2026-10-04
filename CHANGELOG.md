@@ -6,8 +6,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-10-04
+
+### Added
+
+- Add historical next-open position exits for negotiated Binance Spot v2, with
+  gap protection priority, partial inventory caps and completion cooldown.
+- Preserve explicit disabled take-profit through validation, rounding, protection
+  and terminal holding; retain bracket defaults for old entry graphs.
+- Persist separate exit decision/order/fill evidence and mixed-exit reasons,
+  including pending terminal intent and fully signal-closed research counts.
+- Require the published engine 0.12.4 contracts for these optional features;
+  preserve entry-only behavior and explicit feature refusal on older engines.
+- Gate publication on exact installed wheels across engine 0.11.1, 0.12.0,
+  0.12.1, 0.12.2 and 0.12.4, retaining the declared dependency range.
+
 ### Fixed
 
+- Complete mixed partial closes when the remaining inventory and Decimal bar
+  budget differ only by binary rounding. Preserve real residuals and zero
+  liquidity; keep the account partial-close guard strict.
 - Declared Spot account snapshots now expose unspent quote cash through
   `free_margin`. Unrealized gains and losses change equity, not the cash
   available to the strategy. Futures margin semantics are unchanged.
@@ -274,7 +292,8 @@ First public release. Extracted from a private monorepo with a clean history.
 - Releases publish to PyPI through Trusted Publishing (OIDC) with PEP 740
   attestations. No long-lived PyPI credential is used.
 
-[Unreleased]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.1...HEAD
+[Unreleased]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.2...HEAD
+[0.12.2]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/koval-finance/koval-backtrader/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/koval-finance/koval-backtrader/compare/v0.11.0...v0.11.1

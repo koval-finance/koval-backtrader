@@ -218,3 +218,29 @@ and append observed stop changes. Entry fill sizing and protective fill context
 are read from the same broker branch that executed the fill; no second evaluator
 or ledger is allowed. Keep these snapshots detached from mutable setup state.
 Regression coverage: `tests/test_trade_decision_evidence.py`.
+
+## Historical position exits
+
+`position_exit.py` derives graph requirements without eagerly importing new MIT
+symbols, gates the two optional features to explicit Binance Spot v2 with
+leverage 1, and validates stop-only updates independently of the MIT bracket-only
+validator. The runner negotiates before creating execution resources. Older
+engines still run old entry graphs; new graphs require the actual MIT mode and
+exit hooks and fail explicitly when unavailable.
+
+The adapter queries the cached exit hook after one `on_bar`, binds one intent to
+the current run-local position and source decision, cancels entry remainder, and
+submits one market close. `RealisticBroker.next` matches active gap protection
+before that close at an eligible open, then processes intrabar protection for
+remaining inventory. The pre-open phase is entered only for a pending signal
+order; legacy stop-first matching without such an order remains intact. Signal
+orders share sizing caps, volume, fees and the actual-fill ledger with protection.
+Completed signal lifecycle sets a completion-bar cooldown even when protection
+closed the residual. No accepted signal means no new cooldown.
+
+Disabled take-profit is preserved in setup replacement/normalization, stops,
+partial fills and terminal output. No RR fallback or target is added. The trace
+holds exit intents separately from entry intents, and the trade joins its exit
+context to a signal order whose actual fill IDs remain in the ledger. Mixed exits
+use their final fill reason and do not count as fully signal-closed positions.
+See [../docs/results.md](../docs/results.md) for the exported field contract.

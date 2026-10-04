@@ -39,7 +39,8 @@ checks that the tag matches the packaged version, extracts the changelog
 entry, builds, compares package bytes and version metadata with
 `scripts/check_dist.py --require-artifacts`, runs `twine check --strict`, publishes to PyPI through Trusted
 Publishing (OIDC — no long-lived PyPI credential exists in this repository),
-and only then creates the GitHub release.
+and only then creates the GitHub release. Publication also requires the
+installed-pair job to pass against the exact built wheel and published engines.
 
 Publishing is irreversible: a filename on PyPI can never be reused, even after
 deletion. The gates run before the upload for that reason.
@@ -78,3 +79,22 @@ The measured matrix belongs in
 
 The release pipeline changes shape, or the engine compatibility policy
 changes.
+
+## 0.12.2 position management release
+
+Engine 0.12.4 is published and provides the historical exit request, cached
+strategy hooks and explicit take-profit mode. Use its PyPI wheel, never the
+same-version development artifact. Record PyPI hashes and verify both PEP 740
+attestations against `koval-finance/koval-engine` before adapter preparation.
+The declared range stays `koval-engine>=0.11.0,<0.13.0`; new capabilities require
+the actual new contracts and a supported Binance Spot v2 configuration. Older
+entry graphs remain supported, with explicit refusal of new capabilities.
+
+CI and tag release verification retain engine 0.11.1/0.12.0/0.12.1 and add
+0.12.2/0.12.4 on Python 3.11/3.13. The tag workflow tests the downloaded build
+artifacts before publication; it does not rebuild a different wheel for the
+pair gate. Its publish job depends on both build and installed-pair success.
+The normal Python 3.11/3.12/3.13 gate remains required. Configured CI coverage
+is not evidence that those runtimes were tested locally. The 0.11.0 fallback
+remains available without claiming full cross-runtime parity. Record actual
+local coverage in [the validation record](../docs/execution-validation.md).

@@ -228,5 +228,8 @@ def build_research_metrics(
         "excursion": _excursion(closed),
         "costs": _costs(closed, execution_costs),
         "final_open_position": open_position,
+        "fully_signal_closed_trades": sum(
+            trade.get("fully_signal_closed") is True for trade in closed
+        ),
         "unavailable": unavailable,
     }

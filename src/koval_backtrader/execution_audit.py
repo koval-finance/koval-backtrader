@@ -195,6 +195,29 @@ def enrich_closed_trade(record: dict, fills: list[dict]) -> None:
         net_pnl_before_funding=gross - costs["commission"],
         execution_costs=costs,
     )
+    reason_codes = {
+        "stop_loss": "sl",
+        "take_profit": "tp",
+        "signal": "signal",
+        "end_of_data": "eod",
+        "liquidation": "liquidation",
+    }
+    if record.get("exit_decision_context") is not None or any(
+        f["koval_role"] == "signal" for f in exits
+    ):
+        record.update(
+            reason=reason_codes.get(exits[-1]["koval_role"], exits[-1]["koval_role"]),
+            fully_signal_closed=all(f["koval_role"] == "signal" for f in exits),
+            exit_fill_reasons=[
+                {
+                    "fill_id": f["fill_id"],
+                    "order_id": f["order_id"],
+                    "reason": reason_codes.get(f["koval_role"], f["koval_role"]),
+                    "quantity": f["size"],
+                }
+                for f in exits
+            ],
+        )
     liquidation_fee = math.fsum(fill.get("liquidation_fee", 0.0) for fill in fills)
     if liquidation_fee:
         record["liquidation_fee"] = liquidation_fee

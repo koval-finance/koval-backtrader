@@ -2,6 +2,7 @@
 """Evidence follows its entry order through delayed and partial execution."""
 
 from copy import deepcopy
+from dataclasses import field, make_dataclass
 
 import numpy as np
 import pytest
@@ -11,7 +12,7 @@ from koval.strategy.base.trade_setup import TradeSetup
 from koval_backtrader.backtest_runner import create_engine
 from tests import test_realistic_evidence as fixture
 from tests.test_realistic_evidence import QUIET, START, STEP, D, execute
-from tests.test_runtime_boundaries import spec_for
+from tests.test_runtime_boundaries import spec_for, unsupported_runtime
 
 
 def test_actual_graph_context_reaches_trade_and_origin_decision():
@@ -21,10 +22,25 @@ def test_actual_graph_context_reaches_trade_and_origin_decision():
             for i, row in enumerate([QUIET] * 4 + [(100, 125, 99, 120, 100)] * 3)
         ]
     )
-    result = create_engine().run(spec_for(rows))
+    spec = spec_for(rows)
+    if unsupported_runtime(spec):
+        return
+    result = create_engine().run(spec)
     assert result.trades
     trade = result.trades[0]
     context = trade.get("decision_context")
+    if "decision_context" not in TradeSetup.__dataclass_fields__:
+        # Older engines emit entries without graph decision recording. Verify
+        # actual execution links and absence of invented graph evidence instead.
+        assert context is None
+        entries = [
+            f
+            for f in result.metrics["execution_audit"]["fills"]
+            if f["role"] == "entry" and f["trade_id"] == trade["id"]
+        ]
+        assert trade["entry_order_id"] == entries[0]["order_id"]
+        assert all(f["decision_id"] == trade["decision_id"] for f in entries)
+        return
     assert context and context["status"] == "recorded"
     assert context["risk"]["risk_budget"] == 20
     assert context["signal_bar_open_ms"] == START + 2 * STEP
@@ -52,7 +68,17 @@ def test_snapshot_survives_execution_and_is_detached(monkeypatch, partial, delay
         "nodes": [{"values": {"flag": False, "zero": 0, "unknown": None}}],
     }
     monkeypatch.setattr(
-        fixture, "TradeSetup", lambda **kw: TradeSetup(**kw, decision_context=deepcopy(original))
+        fixture,
+        "TradeSetup",
+        lambda **kw: (
+            TradeSetup
+            if "decision_context" in TradeSetup.__dataclass_fields__
+            else make_dataclass(
+                "RecordedSetup",
+                [("decision_context", dict | None, field(default=None))],
+                bases=(TradeSetup,),
+            )
+        )(**kw, decision_context=deepcopy(original)),
     )
     price = 110 if delayed else 100
     rows = [QUIET, QUIET, (price, price + 1, price - 1, price, 100)] + [

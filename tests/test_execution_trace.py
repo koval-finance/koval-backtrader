@@ -169,3 +169,53 @@ def test_unresolved_decision_clock_cannot_claim_a_complete_audit():
     audit = create_engine().run(spec).metrics["execution_audit"]
     assert audit["completeness"] == "partial"
     assert "decision_clock_unavailable" in audit["incomplete_reasons"]
+
+
+def test_signal_exit_json_export_and_replay_preserve_links_costs_and_entry(monkeypatch):
+    from tests.test_position_exit import unsupported_position_features
+
+    if unsupported_position_features():
+        return
+    from tests.test_position_exit import QUIET as quiet
+    from tests.test_position_exit import run_exit_probe
+
+    kwargs = dict(
+        mode="disabled",
+        stop=90,
+        signal_bars=(2, 3),
+        evidence={"execution_proxy": ExecutionProxyConfig(D(".1"), "carry", ExecutionLatency())},
+        costs={"commission_bps": 10, "spread_bps": 20, "slippage_bps": 10},
+    )
+    rows = [quiet, (99, 101, 98, 100, 100), (100, 101, 99, 100, 4), (85, 88, 80, 85, 6)]
+    first, _, _, _ = run_exit_probe(monkeypatch, rows, **kwargs)
+    second, _, _, _ = run_exit_probe(monkeypatch, rows, **kwargs)
+    exported = json.loads(
+        json.dumps({"metrics": first.metrics, "trades": first.trades, "equity": first.equity_curve})
+    )
+    assert exported == json.loads(
+        json.dumps(
+            {"metrics": second.metrics, "trades": second.trades, "equity": second.equity_curve}
+        )
+    )
+    trade = exported["trades"][0]
+    audit = exported["metrics"]["execution_audit"]
+    assert trade["reason"] == "sl" and not trade["fully_signal_closed"]
+    assert trade["decision_context"]["nodes"][0]["node_id"] == "entry"
+    assert trade["exit_decision_context"]["exit_order_id"] == trade["exit_order_id"]
+    quantities = {"entry": 0.0, "exit": 0.0}
+    for fill in audit["fills"]:
+        quantities[fill["role"]] += fill["size"]
+        assert (
+            next(o for o in audit["orders"] if o["order_id"] == fill["order_id"])["decision_id"]
+            == fill["decision_id"]
+        )
+        assert all(
+            any(
+                e["sequence"] == sequence and e["reference_id"] == str(fill["fill_id"])
+                for e in audit["ledger"]
+            )
+            for sequence in fill["cashflow_sequences"]
+        )
+    assert quantities == {"entry": 1, "exit": 1}
+    assert audit["open_position"] is None
+    assert abs(exported["metrics"]["execution_costs"]["reconciliation_error"]) < 1e-8

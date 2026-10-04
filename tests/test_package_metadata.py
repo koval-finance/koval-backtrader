@@ -7,6 +7,8 @@ import importlib.util
 import tomllib
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src" / "koval_backtrader"
 # Application-only namespaces. The engine is MIT and shared; the app is not.
@@ -55,7 +57,8 @@ def test_backtrader_is_a_declared_runtime_dependency():
     assert any(dep.startswith("backtrader") for dep in dependencies)
 
 
-def test_engine_dependency_accepts_the_released_runtime_contract():
+@pytest.mark.parametrize("version", ["0.11.0", "0.11.1", "0.12.0", "0.12.1", "0.12.2", "0.12.4"])
+def test_engine_dependency_accepts_the_released_runtime_contract(version):
     from packaging.requirements import Requirement
 
     requirement = next(
@@ -63,7 +66,8 @@ def test_engine_dependency_accepts_the_released_runtime_contract():
         for dep in _pyproject()["project"]["dependencies"]
         if dep.startswith("koval-engine")
     )
-    assert "0.11.0" in requirement.specifier
+    assert version in requirement.specifier
+    assert "0.13.0" not in requirement.specifier
     assert "0.10.0" not in requirement.specifier
 
 

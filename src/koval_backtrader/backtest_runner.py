@@ -39,6 +39,13 @@ from koval_backtrader.execution_config import (
 )
 from koval_backtrader.execution_evidence import validate_evidence_coverage
 from koval_backtrader.oco_patch import apply_oco_guard
+from koval_backtrader.position_exit import (
+    POSITION_FEATURES,
+    engine_contract_available,
+    graph_requirements,
+    require_features,
+    supports_position_features,
+)
 from koval_backtrader.realistic_broker import RealisticBroker
 from koval_backtrader.research_metrics import build_research_metrics
 from koval_backtrader.run_identity import build_run_identity
@@ -192,6 +199,9 @@ class BacktraderBacktestEngine:
         if model.version == REALISTIC_VERSION:
             features += ["same_bar_protection"]
             features += list(model.execution_evidence.as_config())
+        if supports_position_features(model) and engine_contract_available():
+            features += sorted(POSITION_FEATURES)
+        require_features(graph_requirements(spec.graph), features)
         negotiated = negotiate_execution_capabilities(
             spec,
             ExecutionCapabilities(
@@ -239,12 +249,19 @@ class BacktraderBacktestEngine:
             durations = {tf: _optional_timeframe_ms(tf) for tf in timeframes}
         primary_ms = durations[timeframes[0]]
         strategy = assemble_from_graph(spec.graph)
+        requirements = getattr(strategy, "required_execution_capabilities", None)
+        if callable(requirements):
+            require_features(requirements(), features)
         bt_cls = make_bt_strategy_class(
             type(strategy),
             event_sink=_make_sink(on_event),
             execution_metadata=metadata,
+            execution_features=tuple(features),
             primary_timeframe_ms=primary_ms,
-            strategy_config={"timeframe": timeframes[0]},
+            strategy_config={
+                "timeframe": timeframes[0],
+                "symbol": "" if model.market is None else model.market.canonical_symbol,
+            },
             htf_timeframe_ms=htf_ms,
             market_identity=model.market,
             runtime_boundaries=boundaries,
@@ -333,6 +350,14 @@ class BacktraderBacktestEngine:
             )
         if model.version == REALISTIC_VERSION:
             metrics["execution_costs"]["ambiguities"] = list(cerebro.broker.ambiguities)
+        open_view = _open_position_view(position, last_close)
+        setup = next((trade["setup"] for trade in strat._trade_map.values()), None)
+        if open_view is not None and getattr(setup, "take_profit_mode", "bracket") == "disabled":
+            open_view.update(
+                take_profit_mode="disabled",
+                take_profit=None,
+                stop_loss=None if strat._stop_order is None else float(strat._stop_order.price),
+            )
         metrics["research"] = build_research_metrics(
             trades=trades,
             equity_curve=equity_curve,
@@ -340,7 +365,7 @@ class BacktraderBacktestEngine:
             bars_in_position=strat.exposure_bars(),
             max_drawdown_pct=metrics["max_drawdown"],
             execution_costs=metrics.get("execution_costs"),
-            open_position=_open_position_view(position, last_close),
+            open_position=open_view,
         )
         return BacktestResult(metrics=dict(metrics), trades=trades, equity_curve=equity_curve)
 

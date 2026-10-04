@@ -93,18 +93,23 @@ def test_release_docs_match_the_project_version():
     assert f"**Status:** {minor_series}.x." in readme
 
 
-def test_installed_pair_ci_covers_the_0121_engine_release():
-    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+@pytest.mark.parametrize("path", [CI_WORKFLOW, WORKFLOW])
+def test_installed_pair_covers_capable_and_supported_older_engines(path):
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
     versions = workflow["jobs"]["installed-pair"]["strategy"]["matrix"]["engine-version"]
 
-    assert versions == ["0.11.1", "0.12.0", "0.12.1"]
+    assert versions == ["0.11.1", "0.12.0", "0.12.1", "0.12.2", "0.12.4"]
+    steps = workflow["jobs"]["installed-pair"]["steps"]
+    assert any("scripts/verify_pair.py" in step.get("run", "") for step in steps)
 
 
 def test_pypi_publish_precedes_the_public_github_release():
     workflow = _workflow_text()
 
     assert "build:\n    needs: verify" in workflow
-    assert "publish:\n    needs: build" in workflow
+    jobs = yaml.safe_load(workflow)["jobs"]
+    assert set(jobs["publish"]["needs"]) == {"build", "installed-pair"}
+    assert jobs["installed-pair"]["needs"] == "build"
     assert "github-release:\n    needs: publish" in workflow
 
 

@@ -420,12 +420,12 @@ keeps running and may size a different entry later.
 `trade_id` matches the `TRADE_OPENED` of the same trade and the `id` of the
 corresponding trade record, so the three views of one trade join cleanly.
 
-`exit_reason` on the event is the internal token — `"stop_loss"`,
-`"take_profit"`, or `"unknown"` for a close that came through neither bracket
-leg. The trade record carries the display label for the same thing
-(`"Stop Loss"`, `"Take Profit"`, `"Manual"`). `exit_price` is the bracket's
-fill price, falling back to the bar's close when there was no bracket fill to
-report.
+`exit_reason` on the event is the internal token: `"stop_loss"`,
+`"take_profit"`, `"signal"`, `"liquidation"`, `"end_of_data"`, or `"unknown"`
+for an unclassified close. The trade record carries the corresponding display
+label, including `"Signal"` for signal closes. `exit_price` is the
+quantity-weighted actual exit price when fills are recorded, with the last
+observed exit price or bar close as a fallback for brokers without a fill ledger.
 
 In 0.9.0 all three fields were wrong on this event — the reason was always
 `"unknown"`, the price was the bar close, and the id was one lower than the
@@ -440,8 +440,8 @@ one — usually a size the account cannot afford.
 and compatibility diagnostics; `account_ledger` contains all gross trade PnL,
 commission, funding and liquidation-fee entries. V2 `TRADE_CLOSED.pnl_comm`
 includes liquidation fees and agrees with the closed-trade record; its exit
-price is the quantity-weighted exit average. `ORDER_FILLED` remains the entry
-notification and adds delta `fill_quantity`, cumulative quantity, delta fee and
+price is the quantity-weighted exit average. `ORDER_FILLED` reports entry and signal-close
+notifications and adds delta `fill_quantity`, cumulative quantity, delta fee and
 partial/filled status. All exit fill deltas are in `execution_costs.fills`.
 
 Risk diagnostics use configured fixed costs; use actual fill fees and the
@@ -452,3 +452,39 @@ risk as a guarantee against gaps or changing future fees/impact.
 
 - [execution-model.md](execution-model.md) — how these numbers are produced.
 - [strategies.md](strategies.md) — what a strategy can put into them.
+
+## Historical position-exit evidence
+
+Entry `intents` and `decision_context` remain separate from
+`execution_audit.position_exit_intents` and `exit_decision_context`. Each
+accepted exit retains position ID, source node, source candle bar/timestamp,
+closed-candle EMA/close values, history bounds and decision timestamp. Its
+`exit_order_id` joins the signal order; actual fills join by `order_id` and
+`decision_id`. Protection fills keep their original entry decision, even when
+an accepted signal close was pending. No second graph evaluation reconstructs
+this evidence.
+
+A completed signal lifecycle adds `exit_decision_context`, `exit_order_id`,
+`exit_fill_reasons` and `fully_signal_closed` to the raw trade. The fill ledger's
+`koval_role` retains `signal`, `stop_loss` or `take_profit`; the trade's canonical
+`reason` follows the last exit fill (`signal`, `sl`, `tp`, `eod`, or
+`liquidation`). Display `exit_reason` remains a human label. For example,
+0.4 signal plus 0.6 stop produces `reason="sl"` and two retained fill reasons;
+it is excluded from `research.fully_signal_closed_trades`. That counter includes
+only closed positions whose entire exit quantity filled through signal orders.
+Ordinary legacy trade reasons retain their existing shape.
+
+`pending_position_exit` retains an unfinished intent in the terminal audit.
+`research.final_open_position` remains a marked residual holding, including
+explicit `take_profit_mode="disabled"`, `take_profit=null` and the current stop
+for a stop-only position. The order and fill records also retain the mode.
+A pending request has no fabricated fill or exit commission. Partial realized
+PnL, remaining quantity, entry/exit fees and marked PnL still reconcile through
+`execution_costs` and the account ledger. JSON export and replay preserve these
+links, quantities, reasons and costs. These adapter result fields do not establish
+adoption by an application's result mapper or persistence layer.
+
+Signal `ORDER_FILLED.fill_price`, `fill_quantity`, `commission` and `fill_ids`
+describe the newly notified fill increment. `cumulative_quantity` and
+`cumulative_fill_price` report the order total and its quantity-weighted average.
+Repeated callbacks do not emit the same increment twice.

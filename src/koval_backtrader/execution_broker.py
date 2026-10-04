@@ -145,6 +145,13 @@ class ExecutionCostBroker(bt.brokers.BackBroker):
             },
         }
         protection = order.info.get("koval_protection_evidence")
+        setup = order.info.get("koval_setup")
+        if setup is not None or order.info.get("koval_take_profit_mode") is not None:
+            record["take_profit_mode"] = (
+                getattr(setup, "take_profit_mode", "bracket")
+                if setup is not None
+                else order.info["koval_take_profit_mode"]
+            )
         if protection is not None:
             record["protection_context"] = dict(protection)
         record["cumulative_quantity"] = abs(float(order.executed.size))

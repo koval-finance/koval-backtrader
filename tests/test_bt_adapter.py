@@ -447,3 +447,44 @@ def test_cancelled_entry_emits_order_rejected():
     assert len(rejected) == 1
     assert rejected[0].payload["reason"] == "canceled"
     assert rejected[0].payload["direction"] == "long"
+
+
+def test_position_exit_hook_reuses_one_real_graph_evaluation_per_candle(monkeypatch):
+    from tests.test_position_exit import unsupported_position_features
+
+    if unsupported_position_features():
+        return
+    from koval.engine.backtest_engine import EngineRunSpec
+    from koval.strategy.graph.executor import GraphExecutor
+
+    from koval_backtrader.backtest_runner import create_engine
+    from tests.test_position_exit import QUIET, START, STEP, configuration, exit_graph
+
+    original = GraphExecutor.step
+    steps = []
+
+    def observed(self, context):
+        steps.append(
+            (
+                context.bar_index,
+                context.position_size,
+                context.position_direction,
+                context.position_id,
+            )
+        )
+        return original(self, context)
+
+    monkeypatch.setattr(GraphExecutor, "step", observed)
+    rows = [QUIET, QUIET, (100, 101, 94, 95, 100), (90, 91, 89, 90, 100)]
+    result = create_engine().run(
+        EngineRunSpec(
+            graph=exit_graph(),
+            feeds={"1m": np.array([[START + i * STEP, *row] for i, row in enumerate(rows)])},
+            initial_capital=10000,
+            execution_config=configuration(),
+        )
+    )
+    assert [step[0] for step in steps] == [1, 2, 3, 4]
+    assert steps[1][1:] == (1, "long", 1)
+    assert steps[-1][1:] == (0, None, None)
+    assert result.trades[0]["reason"] == "signal"

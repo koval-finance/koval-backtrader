@@ -96,3 +96,21 @@ installation and the full gate; old engines must reject the optional contract.
 
 The suite gains a directory, a fixture convention changes, or a new class of
 guard is added.
+
+`test_position_exit.py` exercises next-open signal fills, gap priority, absence
+of targets, partial inventory and shared budgets, entry-remainder cancellation,
+stale identities, completion cooldown, ordinary-stop re-entry parity, latency,
+terminal policies, capability refusal and actual graph execution.
+`test_execution_causality.py` mutates future intrabar extrema; `test_bt_adapter.py`
+counts actual graph steps and observes injected position identity;
+`test_execution_trace.py` verifies JSON export/replay and residual cost/link
+reconciliation. `test_research_metrics.py` excludes protective/mixed closures
+from the fully signal-closed counter. Run the full gate with an isolated exact
+engine wheel before calling a local pair verified. Feature support is distinct
+from release, installed application adoption and public clean-install proof.
+
+Mixed partial closes also cover a stop fill followed by signal completion at a
+binary/Decimal liquidity boundary. The regression must finish the position,
+cancel protection and reconcile fees without relaxing the MIT partial-close
+guard. Nearby genuine residuals, tiny holdings, zero budget, costs and signal
+latency protect the allocation tolerance from becoming a dust filter.

@@ -8,16 +8,23 @@ def finalize_runtime(strategy):
         return
     broker = strategy.broker
     retain = boundaries.end_of_data_policy == "mark_at_last_close"
-    for order in (strategy._entry_order, strategy._stop_order, strategy._tp_order):
+    for order in (
+        strategy._entry_order,
+        strategy._stop_order,
+        strategy._tp_order,
+        strategy._signal_order,
+    ):
         if order is not None and order.alive() and (not retain or order == strategy._entry_order):
             strategy.cancel(order)
     if strategy.position and not retain:
         submit = strategy.sell if strategy.position.size > 0 else strategy.buy
+        setup = next((trade["setup"] for trade in strategy._trade_map.values()), None)
         order = submit(
             size=abs(strategy.position.size),
             _checksubmit=False,
             koval_role="end_of_data",
             koval_terminal=True,
+            koval_take_profit_mode=getattr(setup, "take_profit_mode", "bracket"),
         )
         broker.pending.remove(order)
         broker._execute(order, ago=0, price=float(strategy.data.close[0]))

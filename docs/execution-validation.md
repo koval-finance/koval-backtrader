@@ -1,5 +1,68 @@
 # Execution validation and release review
 
+## 0.12.2 candidate acceptance
+
+Prepared 2026-10-04 with the published `koval-engine 0.12.4` wheel and the
+local `koval-backtrader 0.12.2` wheel. PyPI hashes matched both engine artifacts;
+PEP 740 wheel and sdist attestations verified cryptographically against
+`koval-finance/koval-engine`, its `release.yml` workflow and `v0.12.4` tag.
+The engine's tag, certificate and successful release workflow identify commit
+`f570fa8bf0c562627dbedeabdc4819ae21f02f70`. The public engine's 130 package files
+match the earlier development payload; the public wheel archive has its own
+hash and was freshly downloaded rather than substituted by version number.
+
+Exact-wheel environments outside the checkout passed `pip check`, entry-point
+discovery, installed package-byte verification, lint, formatting and the full
+suite on **Python 3.13.5, macOS x86_64**:
+
+| Published engine | Local adapter | Full gate | Pair manifest |
+|---|---|---|---|
+| 0.11.1 | 0.12.2 | 971 passed, 3 existing skips | [0.11.1 pair](acceptance/2026-10-04/pair-engine-0.11.1-adapter-0.12.2-py313.json) |
+| 0.12.0 | 0.12.2 | 971 passed, 3 existing skips | [0.12.0 pair](acceptance/2026-10-04/pair-engine-0.12.0-adapter-0.12.2-py313.json) |
+| 0.12.1 | 0.12.2 | 974 passed | [0.12.1 pair](acceptance/2026-10-04/pair-engine-0.12.1-adapter-0.12.2-py313.json) |
+| 0.12.2 | 0.12.2 | 974 passed | [0.12.2 pair](acceptance/2026-10-04/pair-engine-0.12.2-adapter-0.12.2-py313.json) |
+| 0.12.4 | 0.12.2 | 974 passed | [0.12.4 capable pair](acceptance/2026-10-04/pair-engine-0.12.4-adapter-0.12.2-py313.json) |
+
+The existing three skips on engine 0.11.1/0.12.0 concern the unavailable engine
+preparation hook and realism report. New position-feature tests instead verify
+explicit capability refusal on older engines; they do not skip that contract.
+The dependency range remains `koval-engine>=0.11.0,<0.13.0`. A separate installed
+0.11.0 fallback smoke passed discovery, bytes, `pip check`, 12 selected tests
+and the deterministic entry-only A0 probes in all three fill profiles. This is
+limited fallback evidence, not a full 0.11.0 suite or general paper parity claim.
+
+A0 retained inputs reproduced two trades per legacy/fixed/realistic profile,
+every retained trade financial field, equity timestamp/value and final capital
+with **0 USDT** maximum absolute financial difference (tolerance 1e-8).
+Repeated runs were deterministic. Six output examples reproduced signal,
+stop-only, mixed, pending, partial-terminal and actual EMA-graph evidence. Entry
+and exit contexts, order/fill links, fees, inventory, mixed reasons and terminal
+intent matched retained outputs. The session-start adapter version changed
+from 0.12.1 to 0.12.2, and the implementation SHA256 changed after the review
+fix; these two explicit identity differences were validated separately. Each example's reconciliation error was zero. These are
+synthetic engineering checks, not market research or proof of exchange fills.
+
+The exact installed capable pair also rejects unsupported legacy/fixed,
+missing-market, derivatives and other-venue hosts before Cerebro or events;
+the installed 0.11.0 floor explicitly rejects new graphs in Spot v2. Historical
+features require Binance Spot v2, leverage one and the actual engine contracts.
+MIT paper and live remain unsupported for these features.
+
+Fresh review reproduced a mixed partial-close rounding failure in both target
+modes. Two observed failing regressions passed after the bounded allocation
+fix. Six focused cases cover completion, genuine small residuals, zero budget,
+costs and latency; independent re-review passed 81 focused tests and 80
+deterministic lifecycle probes. No actionable review finding remains deferred.
+
+The package checks verify matching wheel/sdist bytes, strict Twine metadata,
+public surface, licensing and parsed workflows. A fresh read-only release review
+and local gates are candidate evidence. The configured Linux Python
+3.11/3.12/3.13 and exact-pair 3.11/3.13 CI matrices have not run for this
+uncommitted tree. The owner must commit with DCO sign-off, push, wait for CI,
+and tag; publication and independent verification of both public wheels remain
+separate. The tag workflow gates publication on the exact downloaded adapter
+build and all five published engine versions.
+
 ## 0.12.1 candidate acceptance
 
 Prepared 2026-09-20 from the exact local `koval-engine 0.12.1` and

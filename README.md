@@ -24,6 +24,23 @@ and the evidence behind it is in the
 [validation record](https://github.com/koval-finance/koval-backtrader/blob/main/docs/execution-validation.md).
 Read both before treating a number here as a forecast.
 
+## Historical position exits and optional targets
+
+Version 0.12.2 adds `position_exit_v1` and `optional_take_profit_v1` with
+`koval-engine 0.12.4`. These capabilities require explicit Binance Spot market
+identity, `ohlcv_realistic_v2`, leverage one and an identified current long.
+Signal closes use actual remaining inventory at the next eligible open. Active
+gap protection takes priority; partial closes share liquidity and cost accounting
+with protection. Separate exit evidence and unfinished terminal intent survive
+export. Only explicit `take_profit_mode="disabled"` suppresses the target;
+missing/default bracket and old null targets retain their previous fallback.
+
+Older engines remain in the dependency range for existing entry graphs. A graph
+requiring either new capability fails before simulation resources are created
+when the engine or execution profile cannot support it. Paper and live hosts do
+not support these features. See the [execution model](docs/execution-model.md)
+and [result fields](docs/results.md) for the precise output and limitations.
+
 ## Why this is a separate package
 
 koval-engine is MIT-licensed and defines backtesting as a plugin contract —

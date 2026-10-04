@@ -21,6 +21,7 @@ from koval_backtrader.execution_account import ExecutionAccount, revalidated_ris
 from koval_backtrader.execution_config import COSTED_VERSIONS
 from koval_backtrader.execution_trace import ExecutionTrace
 from koval_backtrader.market_identity import rejects_direction
+from koval_backtrader.position_exit import require_features, validate_stop_only_update
 from koval_backtrader.research_metrics import segment_inputs
 from koval_backtrader.strategy_account import bind_strategy_account
 from koval_backtrader.terminal_execution import finalize_runtime
@@ -36,6 +37,7 @@ _EXIT_REASON_LABELS: dict[str, str] = {
     "take_profit": "Take Profit",
     "liquidation": "Liquidation",
     "end_of_data": "End of Data",
+    "signal": "Signal",
 }
 
 _DEFAULT_PARAMS: tuple = (
@@ -47,6 +49,7 @@ _DEFAULT_PARAMS: tuple = (
     ("strategy_config", {}),
     ("event_sink", None),
     ("execution_metadata", None),
+    ("execution_features", ()),
     ("primary_timeframe_ms", None),
     ("htf_timeframe_ms", None),
     ("market_identity", None),
@@ -76,6 +79,10 @@ class BTStrategyAdapter(bt.Strategy):
         self._entry_order: bt.Order | None = None
         self._stop_order: bt.Order | None = None
         self._tp_order: bt.Order | None = None
+        self._signal_order: bt.Order | None = None
+        self._position_exit_intent: dict | None = None
+        self._exit_decision_keys: set[tuple] = set()
+        self._signal_completion_bar: int = -1
         self._pending_setup: TradeSetup | None = None
         self._trade_map: dict = {}
         self._trade_info: dict[int, dict] = {}
@@ -276,7 +283,14 @@ class BTStrategyAdapter(bt.Strategy):
         # after syncing state, and a strategy that behaves differently in a
         # backtest than it does in paper is worse than no backtest.
         self._strategy.on_bar()
+        hook = getattr(self._strategy, "get_position_exit_request", None)
+        request = hook() if callable(hook) else None
+        if request is not None:
+            self._accept_position_exit(request)
         if not self.position:
+            if self._signal_completion_bar == len(self.data):
+                self._trace.decisions[-1]["entry_gate"] = "signal_close_cooldown"
+                return
             if self._entry_order is not None and self._entry_order.alive():
                 if self._strategy.should_cancel_entry():
                     self._cancelled_entry_ref = self._entry_order.ref
@@ -288,6 +302,66 @@ class BTStrategyAdapter(bt.Strategy):
             self._try_enter()
         else:
             self._update_exits()
+
+    def _accept_position_exit(self, request) -> None:
+        """Bind one detached closed-bar decision to this position and one order."""
+        if self._position_exit_intent is not None or self.position.size <= 0:
+            return
+        market = self.params.market_identity
+        if request.position_id != self._next_trade_id or (
+            market is not None and request.symbol != market.canonical_symbol
+        ):
+            return
+        if (
+            request.position_side != "long"
+            or request.quantity_fraction != 1.0
+            or request.order_type != "market"
+            or request.reason != "signal"
+        ):
+            raise ValueError("unsupported position exit request")
+        features = self.params.execution_features
+        require_features(("position_exit_v1",), features)
+        key = (request.position_id, request.source_node_id, request.bar_index, request.timestamp_ms)
+        if key in self._exit_decision_keys:
+            return
+        self._exit_decision_keys.add(key)
+        if self._entry_order is not None and self._entry_order.alive():
+            self._cancelled_entry_ref = self._entry_order.ref
+            self.cancel(self._entry_order)
+            self._entry_order = None
+        intent = self._trace.begin_position_exit(self, request)
+        self._position_exit_intent = intent
+        self._signal_order = self.sell(
+            size=abs(float(self.position.size)),
+            _checksubmit=False,
+            koval_role="signal",
+            koval_position_id=request.position_id,
+            koval_decision_id=intent["decision_id"],
+            koval_exit_intent_id=intent["intent_id"],
+            koval_intent_id=None,
+            koval_submitted_timestamp_ms=self._strategy.decision_timestamp_ms,
+            koval_decision_timestamp_ms=self._strategy.decision_timestamp_ms,
+            koval_take_profit_mode=getattr(
+                next((trade["setup"] for trade in self._trade_map.values()), self._pending_setup),
+                "take_profit_mode",
+                "bracket",
+            ),
+        )
+        order_id = self.broker.order_id(self._signal_order)
+        intent.update(order_id=order_id, status="accepted")
+        intent["exit_decision_context"]["exit_order_id"] = order_id
+        self._emit(
+            EventType.ORDER_PLACED,
+            {
+                "order_id": order_id,
+                "exit_intent_id": intent["intent_id"],
+                "decision_id": intent["decision_id"],
+                "position_id": request.position_id,
+                "reason": "signal",
+                "order_type": "market",
+                "size": abs(float(self.position.size)),
+            },
+        )
 
     def prenext(self) -> None:
         # A later secondary feed must not suppress primary-clock decisions.
@@ -333,6 +407,9 @@ class BTStrategyAdapter(bt.Strategy):
         self._submit_entry(setup)
 
     def _submit_entry(self, setup: TradeSetup) -> None:
+        if getattr(setup, "take_profit_mode", "bracket") == "disabled":
+            features = self.params.execution_features
+            require_features(("optional_take_profit_v1",), features)
         self._trace.begin_intent(setup)
         # A spot product has no borrow, so a spot-labelled run must not open a
         # position the venue would refuse. Checked here, beside the
@@ -365,7 +442,10 @@ class BTStrategyAdapter(bt.Strategy):
             )
         validator = getattr(self.broker, "validate_entry", None)
         if validator is not None:
-            if setup.take_profit is None:
+            if (
+                setup.take_profit is None
+                and getattr(setup, "take_profit_mode", "bracket") != "disabled"
+            ):
                 distance = abs(setup.entry_price - setup.stop_loss) * self.params.risk_reward_ratio
                 setup = replace(
                     setup,
@@ -499,9 +579,10 @@ class BTStrategyAdapter(bt.Strategy):
                 else None,
             }
         )
+        trace_options["koval_take_profit_mode"] = getattr(setup, "take_profit_mode", "bracket")
         sl = setup.stop_loss
         tp = setup.take_profit
-        if tp is None:
+        if tp is None and getattr(setup, "take_profit_mode", "bracket") != "disabled":
             dist = abs(exec_price - sl)
             tp = (
                 exec_price + dist * self.params.risk_reward_ratio
@@ -517,14 +598,18 @@ class BTStrategyAdapter(bt.Strategy):
                 koval_role="stop_loss",
                 **trace_options,
             )
-            self._tp_order = self.sell(
-                price=tp,
-                exectype=bt.Order.Limit,
-                size=size,
-                oco=self._stop_order,
-                _checksubmit=False,
-                koval_role="take_profit",
-                **trace_options,
+            self._tp_order = (
+                None
+                if tp is None
+                else self.sell(
+                    price=tp,
+                    exectype=bt.Order.Limit,
+                    size=size,
+                    oco=self._stop_order,
+                    _checksubmit=False,
+                    koval_role="take_profit",
+                    **trace_options,
+                )
             )
         else:
             self._stop_order = self.buy(
@@ -535,14 +620,18 @@ class BTStrategyAdapter(bt.Strategy):
                 koval_role="stop_loss",
                 **trace_options,
             )
-            self._tp_order = self.buy(
-                price=tp,
-                exectype=bt.Order.Limit,
-                size=size,
-                oco=self._stop_order,
-                _checksubmit=False,
-                koval_role="take_profit",
-                **trace_options,
+            self._tp_order = (
+                None
+                if tp is None
+                else self.buy(
+                    price=tp,
+                    exectype=bt.Order.Limit,
+                    size=size,
+                    oco=self._stop_order,
+                    _checksubmit=False,
+                    koval_role="take_profit",
+                    **trace_options,
+                )
             )
 
     def _update_exits(self) -> None:
@@ -562,6 +651,9 @@ class BTStrategyAdapter(bt.Strategy):
         trade_id = self._next_trade_id
         new_sl = self._strategy.on_sl_update(trade_id)
         new_tp = self._strategy.on_tp_update(trade_id)
+        setup = next((trade["setup"] for trade in self._trade_map.values()), self._pending_setup)
+        if getattr(setup, "take_profit_mode", "bracket") == "disabled":
+            new_tp = None
 
         current_sl = self._stop_order.price
         current_tp = self._tp_order.price if (self._tp_order and self._tp_order.alive()) else None
@@ -583,14 +675,18 @@ class BTStrategyAdapter(bt.Strategy):
         normalize = getattr(self.broker, "normalize_protection", None)
         if normalize is not None:
             target_sl, target_tp = normalize(self, target_sl, target_tp)
-        validate_protection_update(
+        validator = (
+            validate_protection_update if target_tp is not None else validate_stop_only_update
+        )
+        validator(
             side="buy" if is_long else "sell",
             current_stop=current_sl,
             stop_price=target_sl,
-            target_price=target_tp,
+            **({"target_price": target_tp} if target_tp is not None else {}),
         )
         origin = {
-            key: self._stop_order.info.get(key) for key in ("koval_decision_id", "koval_intent_id")
+            key: self._stop_order.info.get(key)
+            for key in ("koval_decision_id", "koval_intent_id", "koval_take_profit_mode")
         }
         origin["koval_submitted_timestamp_ms"] = self._strategy.decision_timestamp_ms
         if sl_changed:
@@ -648,6 +744,8 @@ class BTStrategyAdapter(bt.Strategy):
                 float(order.executed.comm),
                 float(order.executed.pnl),
             )
+            if delta_size <= 0:
+                return
             if order == self._entry_order or order.info.get("koval_setup") is not None:
                 if order.status == order.Completed:
                     self._entry_order = None
@@ -734,8 +832,36 @@ class BTStrategyAdapter(bt.Strategy):
                 )
                 return
 
-            is_stop = self._stop_order is not None and order.ref == self._stop_order.ref
-            is_tp = self._tp_order is not None and order.ref == self._tp_order.ref
+            role = order.info.get("koval_role")
+            is_stop = role == "stop_loss" or (
+                self._stop_order is not None and order.ref == self._stop_order.ref
+            )
+            is_tp = role == "take_profit" or (
+                self._tp_order is not None and order.ref == self._tp_order.ref
+            )
+            if role == "signal":
+                self._pending_exit_price = float(order.executed.price)
+                self._last_exit_reason = "signal"
+                self._emit(
+                    EventType.ORDER_FILLED,
+                    {
+                        "order_id": self.broker.order_id(order),
+                        "decision_id": order.info.get("koval_decision_id"),
+                        "fill_ids": [
+                            f["fill_id"]
+                            for f in self.broker.order_fills.get(order.ref, ())
+                            if f["cumulative_quantity"] > prior_size
+                        ],
+                        "fill_price": (cumulative_value - prior_value) / delta_size,
+                        "cumulative_fill_price": float(order.executed.price),
+                        "fill_quantity": delta_size,
+                        "cumulative_quantity": cumulative_size,
+                        "commission": delta_fee,
+                        "status": "partial" if order.status == order.Partial else "filled",
+                        "reason": "signal",
+                        "position_id": order.info.get("koval_position_id"),
+                    },
+                )
 
             if order.info.get("koval_role") in {"liquidation", "end_of_data"}:
                 self._pending_exit_price = float(order.executed.price)
@@ -748,7 +874,9 @@ class BTStrategyAdapter(bt.Strategy):
                 self._account.on_partial_close(
                     quantity=delta_size, realized_pnl=delta_pnl, commission=delta_fee
                 )
-                self._last_exit_reason = "stop_loss" if is_stop else "take_profit"
+                self._last_exit_reason = (
+                    "stop_loss" if is_stop else "take_profit" if is_tp else role
+                )
                 return
 
             if is_stop:
@@ -896,6 +1024,7 @@ class BTStrategyAdapter(bt.Strategy):
                 "exit_price": exit_price,
                 "stop_loss": getattr(setup, "stop_loss", 0.0) if setup else 0.0,
                 "take_profit": getattr(setup, "take_profit", 0.0) if setup else 0.0,
+                "take_profit_mode": getattr(setup, "take_profit_mode", "bracket"),
                 "sl_calculation": getattr(setup, "sl_calc_expr", "") if setup else "",
                 "tp_calculation": getattr(setup, "tp_calc_expr", "") if setup else "",
                 "why_entry": list(getattr(setup, "why_entry", []) or []) if setup else [],
@@ -903,6 +1032,17 @@ class BTStrategyAdapter(bt.Strategy):
                 if setup
                 else {},
             }
+            if self._position_exit_intent is not None:
+                self._trade_info[trade.ref].update(
+                    exit_decision_context=deepcopy(
+                        self._position_exit_intent["exit_decision_context"]
+                    ),
+                    exit_order_id=self._position_exit_intent["order_id"],
+                )
+                self._position_exit_intent.update(status="completed", completion_reason=exit_reason)
+                self._signal_completion_bar = len(self.data)
+                self._position_exit_intent = None
+                self._signal_order = None
             # Reset per-trade exit state so the next trade can't inherit a stale
             # reason/price if it ever closes via a non-bracket path.
             self._pending_exit_price = None
@@ -928,9 +1068,8 @@ class BTStrategyAdapter(bt.Strategy):
                     "liquidation_fee": liquidation_fee,
                     "exit_reason": exit_reason,
                     "entry_price": float(trade.price),
-                    # Every close reaching here came through a bracket leg, and
-                    # a leg knows its fill price. The fallback is insurance for
-                    # a future non-bracket exit path, not a case that fires.
+                    # Actual exit fills determine the quantity-weighted price.
+                    # The fallback serves brokers without an actual-fill ledger.
                     "exit_price": float(
                         exit_price if exit_price is not None else self.data.close[0]
                     ),

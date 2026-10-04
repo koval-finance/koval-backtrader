@@ -5,11 +5,69 @@ requires engine 0.11.1; explicit runtime boundaries require engine 0.12.
 Engine 0.11.0 retains its historical limits. See
 [runtime-assurance.md](runtime-assurance.md) for windows, terminal policies,
 persisted audit fields and exact-wheel acceptance.
+Historical position exits and disabled take-profit additionally require an
+engine exposing the corresponding MIT request, mode and capability hooks.
+They are feature-negotiated; the older entry-only contract remains supported.
 It simulates one instrument from closed OHLCV bars. Matching historical and
 paper results demonstrates implementation conformance, not equivalent exchange
 fills. See the [verification and review record](execution-validation.md).
 
 ## Versions and resolved configuration
+
+### Historical signal exits and optional targets
+
+Available from adapter 0.12.2 with the published engine 0.12.4 contracts.
+Older supported engine versions retain entry graphs and explicitly refuse
+these new capabilities before simulation resources are created.
+
+`position_exit_v1` and `optional_take_profit_v1` are offered only by
+`ohlcv_realistic_v2` with an explicit Binance Spot market identity and leverage
+1, when the paired engine supplies the MIT contracts. Legacy, fixed-v1,
+unlabelled, derivative and other venue paths reject new graphs before session
+or broker execution. This support does not enable paper or live execution.
+Requirements are derived from the graph and checked before execution resources
+are created, even when the caller omits explicit requirements.
+
+A `PositionExitRequest` closes the identified current long. The adapter injects
+actual size and direction, evaluates the graph once on the closed candle, and
+queries the cached exit hook once. Accepting the request cancels any entry
+remainder and prevents another entry while closing. Duplicate decisions and
+requests for another position cannot create another close order.
+
+The first eligible subsequent open supplies the market-close reference. At that
+open, an active gap stop wins, then a real gap target, then the signal order.
+Future high/low cannot pre-empt that market fill. Residual inventory receives
+the existing conservative stop-first intrabar protection. Runs without an
+accepted signal close preserve their prior matching and re-entry behavior.
+Submission latency and available volume can defer a signal fill to a later
+open. The shared bar-volume proxy uses completed-bar volume, an explicitly
+offline approximation, rather than measured open liquidity.
+
+Signal and protection orders share the volume budget, fee schedule, fill ledger
+and actual inventory cap. Partial signal fills resize protection. The signal
+lifecycle blocks entry on its completion candle, including completion by
+protection. Ordinary protective exits and disabled-TP-only graphs retain their
+existing same-candle entry rule.
+
+Closing allocation recovers at most two binary representable steps when a
+positive bar budget differs from requested residual inventory only by roundoff.
+This avoids a false partial notification on a completed mixed close. Genuine
+residual holdings and zero-liquidity deferral remain protected; inventory is
+never exceeded.
+
+Only explicit `take_profit_mode="disabled"` removes the target and suppresses
+RR fallback. Default/missing `bracket` and legacy `take_profit=None` retain RR
+fallback. Disabled mode is retained through normalization, partial fills,
+stop replacement and terminal output. A target update cannot create a target
+for a disabled position. Stop updates must remain positive, finite and cannot
+widen risk; no dummy target is introduced to validate them.
+
+If no eligible next open exists, the signal remains pending and inventory is
+marked at the last close. No signal fill is invented. An explicitly requested
+`flatten_at_last_close` runtime policy still produces an `end_of_data` fill,
+separately from the signal decision.
+
+### Profile configuration
 
 | Plugin profile | Paired paper profile | Protection | Optional execution evidence |
 |---|---|---|---|
