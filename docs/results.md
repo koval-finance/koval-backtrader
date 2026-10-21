@@ -114,6 +114,24 @@ favorable tick rounding. `funding_entries` and `liquidation_fee` are separate
 run-cost fields. `ambiguities` records stop-first choices and local reference
 PnL sensitivity before costs; these are not full-strategy return bounds.
 
+An already working target matched at the open has the opening print in
+`reference_price`, `koval_role="take_profit"`, and, in v2,
+`protection_context.rule="target_gap_at_open"`. This includes an exact opening
+touch. It is not an ambiguous stop-first selection even if the later high/low
+span both levels. `both_levels_touched` describes that candle's range; the
+selected rule and `ambiguities` distinguish unknown ordering from a known open.
+A target reached after an intrabar entry uses the target reference and
+`rule="target_touched"`, never a pre-entry opening print. Costs still adjust the
+selected reference before commissions, cash and equity are computed.
+
+The shared engine 0.12.6 correction preserves first-new-day executions in
+`execution_audit.account_snapshots` and `terminal_account`: daily PnL is measured
+from the preceding supplied equity mark. Entry fees paid before midnight are
+already in that baseline; exit fees at midnight belong to the new day. These
+fields drive daily-loss filters before another entry decision. Older engine
+pairs do not establish this behavior; see the
+[current acceptance scope](execution-validation.md#spot-chronology-correction).
+
 ### Reconciliation
 
 For both costed profiles, both identities must hold:

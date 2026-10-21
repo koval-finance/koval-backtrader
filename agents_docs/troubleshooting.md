@@ -3,6 +3,25 @@
 Dated failure memory. Newest first. Add an entry when a failure costs more
 than a few minutes to understand — the next reader is usually you.
 
+## 2026-10-21 — corrected engine exposes 12 paper-parity failures
+
+**Symptom:** engine 0.12.6 with unchanged adapter 0.12.2 fails ten fixed and two
+realistic generated parity scenarios. A long with SL 90 / TP 120 incorrectly
+stops at 90 on `O125 H130 L80 C100`; adding a signal exit changes it to TP 125.
+**Cause:** fixed OCO queue order and realistic intrabar stop-first selection
+ignored an already working target at the known open. Realistic entry-bar target
+pricing also reused an open that preceded the limit entry.
+**Fix:** prioritize opening protection before intrabar selection, independently
+of signal exits, and honor `allow_open_gap=False` for entry-bar targets.
+Preserve profile activation differences, cost arithmetic and shared liquidity.
+The accompanying midnight daily-loss regression is fixed by the engine's shared
+account state; do not add duplicate accounting or reorder adapter notifications.
+
+The old engine 0.12.5 can agree with the old adapter while both share these
+defects. Its green historical result is not corrected-pair evidence. Adapter
+0.12.3 rejects those engines through its dependency floor and verifies the
+corrected 0.12.6 pair without weakening execution assertions.
+
 ## 2026-09-20 — installed-pair CI fails only on engine 0.11.1
 
 **Symptom:** the Python 3.11 and 3.13 jobs for engine 0.11.1 fail in

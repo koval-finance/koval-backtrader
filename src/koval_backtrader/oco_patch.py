@@ -16,6 +16,8 @@ cancellations propagate. This patch:
    when trailing/breakeven runs same-bar as entry fill while orders are still Submitted.
 """
 
+from collections import deque
+
 from backtrader.brokers import bbroker
 from backtrader.order import Order
 
@@ -51,6 +53,43 @@ def _patched_ococheck(self, order):
                 self.notify(o)
 
 
+def _opening_protection_priority(order):
+    """Known opening executions precede ambiguous touches inside one OCO pair."""
+    opening = getattr(order.data, "tick_open", None)
+    if opening is None:
+        opening = order.data.open[0]
+    trigger = order.created.price
+    if order.exectype == Order.Stop:
+        crossed = opening >= trigger if order.isbuy() else opening <= trigger
+        return 0 if crossed else 2
+    if order.exectype == Order.Limit:
+        crossed = opening <= trigger if order.isbuy() else opening >= trigger
+        return 1 if crossed else 2
+    return 2
+
+
+def _prioritize_opening_protection(broker):
+    """Reorder only existing active protection within its own queued OCO slots."""
+    pending = list(broker.pending)
+    groups = {}
+    for index, order in enumerate(pending):
+        if (
+            not order.alive()
+            or not order.active()
+            or order.created.dt >= order.data.datetime[0]
+            or order.info.get("koval_role") not in {"stop_loss", "take_profit"}
+        ):
+            continue
+        group = _get_ocoref(broker, order)
+        if group is not None:
+            groups.setdefault(group, []).append(index)
+    for indices in groups.values():
+        orders = sorted((pending[i] for i in indices), key=_opening_protection_priority)
+        for index, order in zip(indices, orders, strict=True):
+            pending[index] = order
+    broker.pending = deque(pending)
+
+
 def _patched_next(self):
     """Original BackBroker.next with OCO guard before _try_exec."""
     # Reset OCO-done set each bar
@@ -75,6 +114,7 @@ def _patched_next(self):
     self.cash -= credit
 
     self._process_order_history()
+    _prioritize_opening_protection(self)
 
     # Iterate once over all elements of the pending queue
     self.pending.append(None)

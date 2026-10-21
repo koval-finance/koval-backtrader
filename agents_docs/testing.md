@@ -114,3 +114,13 @@ binary/Decimal liquidity boundary. The regression must finish the position,
 cancel protection and reconcile fees without relaxing the MIT partial-close
 guard. Nearby genuine residuals, tiny holdings, zero budget, costs and signal
 latency protect the allocation tolerance from becoming a dust filter.
+
+`test_protection_chronology.py` covers both profiles, long/short exact opening
+touches and gaps, adverse costs, same-bar limit entry, partial/zero liquidity,
+OCO resizing/cancellation, activation delays and signal-request invariance.
+`test_daily_risk_rollover.py` compares actual adapter and LiveEngine account
+snapshots around UTC midnight, including losses, gains, fees and blocked
+re-entry. Adapter 0.12.3 requires engine 0.12.6 for this acceptance. Older
+engine failures remain in the historical validation record; dependency and CI
+guards now enforce the corrected supported pair. No execution regression is
+skipped, waived or hidden behind changed tolerances.

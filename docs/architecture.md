@@ -38,7 +38,7 @@ src/koval_backtrader/
 ├── backtest_runner.py   375 lines  the plugin: spec in, result out
 ├── bt_adapter.py        1161 lines  DeclarativeStrategy → bt.Strategy bridge
 ├── bt_analyzers.py      131 lines  trade list and equity curve extraction
-└── oco_patch.py         148 lines  the Backtrader OCO bug fix
+└── oco_patch.py         188 lines  the Backtrader OCO bug fix
 ```
 
 These four core modules are joined by focused execution modules. The broker
@@ -200,7 +200,9 @@ The patch replaces three `BackBroker` methods:
 
 - `next()` — resets a per-bar `_oco_done` set, and before executing any
   order checks whether its OCO group already completed this bar. If so the
-  order is cancelled instead of executed.
+  order is cancelled instead of executed. Existing active plugin protection
+  is ordered within its own OCO queue slots so opening executions precede
+  ambiguous intrabar touches; unrelated orders keep their relative placement.
 - `_ococheck()` — records the group in `_oco_done` as soon as one leg
   completes, then cancels the siblings as upstream does.
 - `cancel()` — also removes orders from the `submitted` queue, not just

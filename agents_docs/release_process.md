@@ -9,7 +9,7 @@ distribution metadata, so there is no second copy to drift. There is no
 
 ## Compatibility with the engine
 
-The dependency is a range — currently `koval-engine>=0.11.0,<0.13.0` — never
+The dependency is a range — currently `koval-engine>=0.12.6,<0.13.0` — never
 an exact pin. A plugin that hard-pins one engine patch version forces every
 downstream user into lockstep upgrades.
 
@@ -18,6 +18,20 @@ engine's current `ENGINE_PROTOCOL_VERSION`. When the engine bumps that
 constant, `check_protocol_version()` starts rejecting specs, and the correct
 response is a new release of this package with a widened range — not a
 loosened bound hoping for the best.
+
+Adapter 0.12.3 requires the engine 0.12.6 chronology and midnight-risk
+corrections. Older engines are outside this release's dependency range; users
+reproducing old results retain their exact earlier engine and adapter pins.
+Normal CI and release CI both verify the supported engine 0.12.6 pair on Python
+3.11/3.13, in addition to the normal 3.11/3.12/3.13 suite. No parity waiver,
+tolerance or skip substitutes for corrected-pair acceptance. See the
+[current validation scope](../docs/execution-validation.md#spot-chronology-correction).
+
+Publish and independently verify engine 0.12.6 before pushing the adapter
+preparation commit or tag: both workflows install the declared engine range
+from PyPI. Local validation must use the exact unpublished engine wheel in an
+isolated environment until that publication is complete. Never patch a sibling
+virtualenv or treat a source override as installed-pair release evidence.
 
 ## Cutting a release
 

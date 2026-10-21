@@ -734,7 +734,7 @@ class RealisticBroker(ExecutionCostBroker):
         elif allow_open_gap and stop_gap:
             selected, reference = stop_order, open_
             protection_rule = "stop_gap_at_open"
-        elif open_only and allow_open_gap and target_gap:
+        elif allow_open_gap and target_gap:
             selected, reference = target_order, open_
             protection_rule = "target_gap_at_open"
         elif open_only:
@@ -757,9 +757,8 @@ class RealisticBroker(ExecutionCostBroker):
                     }
                 )
         elif hit_target:
-            target_gap = open_ >= target if is_long else open_ <= target
-            selected, reference = target_order, open_ if target_gap else target
-            protection_rule = "target_gap_at_open" if target_gap else "target_touched"
+            selected, reference = target_order, target
+            protection_rule = "target_touched"
         if selected is None:
             return
         selected.addinfo(

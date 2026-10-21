@@ -1,5 +1,59 @@
 # Execution validation and release review
 
+## Spot chronology correction
+
+The 2026-10-21 correction supersedes the older acceptance records below for
+opening protection, entry-bar target pricing and UTC-midnight daily risk.
+An unchanged adapter reproduced all twelve existing generated parity failures
+against the corrected local engine 0.12.6 wheel: ten fixed-profile cases and
+two realistic cases. The new chronology tests also reproduced opening targets
+losing to later stops and intrabar limits receiving a pre-entry open. Ten
+daily-rollover cases failed with the old engine 0.12.5, including blocked
+re-entry; the correction belongs to the shared MIT account state.
+
+The correction is prepared as adapter 0.12.3, requiring
+`koval-engine>=0.12.6,<0.13.0`. These changed bytes are **not the published 0.12.2
+distribution**. Acceptance uses the exact local engine 0.12.6 artifact and freshly
+built adapter artifact; local versions alone do not prove publication or app
+adoption. The engine must be published and independently verified first.
+
+Before the release metadata update, on Python 3.13.5 / macOS x86_64, the complete
+`scripts/verify.sh` gate passed
+**1029 tests**, including all **317 existing paper-parity cases** and **55 new
+regression cases**, with lint and formatting clean. The gate also passed all
+1029 tests with both exact wheels installed normally in a separate environment,
+without a source override. `pip check`, entry-point discovery, installed wheel
+payload checks, wheel/sdist source checks and strict Twine validation passed.
+The engine wheel's 133 package files matched the audited engine source, and its
+SHA256 matched the audit manifest. The adapter wheel contains 22 package files.
+
+For comparison, the corrected adapter with old installed engine 0.12.5 produced
+**22 failures and 305 passes** in the focused parity/rollover run: twelve
+chronology differences and ten daily-accounting regressions. This check used a
+process-local adapter override without changing the application's packages.
+
+The regression scope covers both profiles, mirrored directions, exact opening
+touches/gaps, adverse costs, partial and exhausted liquidity, OCO cancellation,
+activation timing and signal-exit invariance. Spot comparisons check actual
+prices, quantities, fees, cash, inventory cost and equity. Midnight integration
+compares all shared account fields with actual LiveEngine replay and verifies
+that the daily-loss filter refuses another entry. Signal exits are tested only
+historically, since the live engine refuses that capability.
+
+Older engines retain known matching/accounting limitations and are outside
+adapter 0.12.3's declared range. CI and release CI require the engine 0.12.6
+installed pair on Python 3.11/3.13; the normal suite also covers Python 3.12.
+The compatibility assertions now reject engines below 0.12.6. All parity
+expectations, tolerances and execution regressions remain enforced without new
+waivers or skips. Verify exact public hashes/provenance and install the corrected
+published pair before updating the app. The configured Python-version CI matrix
+and app archive replay remain separate acceptance work.
+
+Quote-asset fees, market-on-touch targets, unknown intrabar paths and OHLCV
+liquidity proxies remain simulation limits. This evidence does not validate
+base/third-asset venue fees, actual order-list fills, a Spot gateway, authenticated
+Testnet execution, real-money trading or profitability.
+
 ## 0.12.2 candidate acceptance
 
 Prepared 2026-10-04 with the published `koval-engine 0.12.4` wheel and the

@@ -1,13 +1,14 @@
 # Execution model
 
-Version 0.12 supports `koval-engine>=0.11.0,<0.13.0`. Baseline corrected parity
-requires engine 0.11.1; explicit runtime boundaries require engine 0.12.
-Engine 0.11.0 retains its historical limits. See
+Adapter 0.12.3 requires `koval-engine>=0.12.6,<0.13.0` for the corrected
+opening-price and midnight-risk contract. Earlier adapter releases and their
+exact engine pins retain the older behavior; historical acceptance records do
+not establish corrected parity. Explicit runtime boundaries are supported. See
 [runtime-assurance.md](runtime-assurance.md) for windows, terminal policies,
 persisted audit fields and exact-wheel acceptance.
 Historical position exits and disabled take-profit additionally require an
 engine exposing the corresponding MIT request, mode and capability hooks.
-They are feature-negotiated; the older entry-only contract remains supported.
+They are feature-negotiated; existing entry-only graphs remain supported.
 It simulates one instrument from closed OHLCV bars. Matching historical and
 paper results demonstrates implementation conformance, not equivalent exchange
 fills. See the [verification and review record](execution-validation.md).
@@ -17,8 +18,8 @@ fills. See the [verification and review record](execution-validation.md).
 ### Historical signal exits and optional targets
 
 Available from adapter 0.12.2 with the published engine 0.12.4 contracts.
-Older supported engine versions retain entry graphs and explicitly refuse
-these new capabilities before simulation resources are created.
+Adapter 0.12.3 includes those engine contracts through its minimum dependency;
+unsupported profiles still refuse them before simulation resources are created.
 
 `position_exit_v1` and `optional_take_profit_v1` are offered only by
 `ohlcv_realistic_v2` with an explicit Binance Spot market identity and leverage
@@ -37,8 +38,9 @@ requests for another position cannot create another close order.
 The first eligible subsequent open supplies the market-close reference. At that
 open, an active gap stop wins, then a real gap target, then the signal order.
 Future high/low cannot pre-empt that market fill. Residual inventory receives
-the existing conservative stop-first intrabar protection. Runs without an
-accepted signal close preserve their prior matching and re-entry behavior.
+the existing conservative stop-first intrabar protection. Opening protection
+has the same priority without a signal request. Ordinary protective exits
+retain their existing re-entry behavior.
 Submission latency and available volume can defer a signal fill to a later
 open. The shared bar-volume proxy uses completed-bar volume, an explicitly
 offline approximation, rather than measured open liquidity.
@@ -167,7 +169,10 @@ before an outstanding entry remainder. A protective fill cancels that remainder.
 V1 signals on N, fills on N+1, protects from N+2. V2 can open and close on
 N+1. An entry already beyond its requested bracket is contained at the matched
 market reference. For an ordinary entry-bar stop touch, a pre-entry opening
-gap is not reused as the stop fill. Existing stops retain gap-through behavior.
+gap is not reused as the stop fill. Likewise, a limit entry reached inside the
+candle cannot use an earlier favorable open for its target: the target reference
+is the touched target level. Existing stops retain gap-through behavior.
+This rule does not recover the unknown intrabar tick path from OHLC.
 
 ### Where this differs from the paper broker
 
@@ -209,7 +214,17 @@ as well as pending siblings. V2 retains and resizes both legs after a partial
 exit; a complete exit cancels its sibling. It does not delegate historical
 matching to `PaperBroker`. Treat a Backtrader upgrade as a source-review event.
 
-If both protection levels are touched, v2 selects the stop. Its ambiguity
+Both costed profiles first match already active protection at the known opening
+print: stop at/beyond its trigger, then target at/beyond its trigger. Only then
+are intrabar touches considered. For a long entered at 100 with SL 90 and TP
+120, a later `O125 H130 L80 C100` candle exits at target reference 125. An open
+exactly at 120 also gives the target priority. Shorts follow the mirrored rule.
+Pending signal exits do not change this protective ordering; they follow active
+opening protection and precede unresolved intrabar protection. Signal exits
+remain available only in the negotiated Spot v2 path.
+
+If the open is inside the bracket and both protection levels are touched,
+stop-first matching remains. V2's ambiguity
 record includes local stop/target reference PnL for the full current position,
 before fees, funding and liquidity limits. These alternatives describe one bar;
 they are not optimistic/pessimistic bounds on the strategy's total return.
@@ -284,8 +299,16 @@ refused: they require a further lifecycle contract.
 ## Drawdown cut-off
 
 The optional adapter `max_drawdown` gate is checked after a closed trade. It is
-not a continuous intrabar risk control. Daily PnL uses the previous bar's equity
-as the next UTC day's baseline, following engine account semantics.
+not a continuous intrabar risk control. With the corrected engine 0.12.6,
+daily PnL uses the previous supplied bar's equity as the next UTC day's baseline,
+even when a full-close notification precedes that day's first account mark.
+First-bar losses, gains and exit fees therefore reach the strategy's daily-risk
+filter immediately. A two-unit buy at 100 before midnight and stop at 90 at
+midnight, without costs, gives balance 9980, daily PnL -20 and daily loss 0.2%
+from initial capital 10000. The adapter delegates this accounting to the engine.
+Older engines are outside adapter 0.12.3's declared range because they do not
+satisfy this corrected rollover/chronology acceptance contract. See the
+[paired validation scope](execution-validation.md#spot-chronology-correction).
 
 ## What is not modelled
 

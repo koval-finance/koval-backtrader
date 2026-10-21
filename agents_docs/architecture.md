@@ -114,7 +114,10 @@ Backtrader runs `_ococheck` after `_try_exec`, so when a take-profit and a
 stop-loss are both eligible within one bar, both can fill before the
 cancellation propagates — producing a trade that never happened. The patch
 tracks completed OCO groups per bar and cancels the sibling before execution,
-and fixes `cancel()` to drop orders still in the submitted queue.
+and fixes `cancel()` to drop orders still in the submitted queue. Before matching,
+it orders existing active plugin protection within each OCO group's queue slots:
+opening stop, opening target, then intrabar touches in their existing order.
+Unrelated orders and newly created protection keep their placement and timing.
 
 `apply_oco_guard()` is idempotent and called once at import of
 `backtest_runner`. It monkey-patches broker internals, which is the fragile
@@ -232,8 +235,10 @@ The adapter queries the cached exit hook after one `on_bar`, binds one intent to
 the current run-local position and source decision, cancels entry remainder, and
 submits one market close. `RealisticBroker.next` matches active gap protection
 before that close at an eligible open, then processes intrabar protection for
-remaining inventory. The pre-open phase is entered only for a pending signal
-order; legacy stop-first matching without such an order remains intact. Signal
+remaining inventory. The same opening-protection priority applies without a
+pending signal order; only an open inside the bracket retains ambiguous
+stop-first matching. Intrabar entry protection must pass `allow_open_gap=False`
+and cannot reuse a favorable open for its target. Signal
 orders share sizing caps, volume, fees and the actual-fill ledger with protection.
 Completed signal lifecycle sets a completion-bar cooldown even when protection
 closed the residual. No accepted signal means no new cooldown.

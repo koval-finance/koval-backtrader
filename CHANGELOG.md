@@ -6,6 +6,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-10-21
+
+### Fixed
+
+- Match already active stop/target protection at the opening print before
+  ambiguous intrabar touches in both costed profiles. An opening target wins
+  over a later stop touch, independently of a pending signal exit; an open
+  inside the bracket retains conservative stop-first matching.
+- Prevent realistic entry-bar targets from reusing an opening price that
+  preceded an intrabar entry. Use the touched target reference and retain
+  existing activation timing, partial-fill budgets, OCO resizing and costs.
+
+### Validation
+
+- Add mirrored chronology, partial-fill and signal-exit regressions, plus
+  adapter/LiveEngine UTC-midnight loss, gain, fee and daily-limit checks.
+  Daily rollover uses the shared engine correction in the local 0.12.6
+  candidate; no duplicate accounting fix is added.
+- Acceptance requires the corrected engine and adapter artifacts together.
+  Older engines retain their historical accounting/matching defects and cannot
+  establish corrected paper parity. See
+  [execution validation](docs/execution-validation.md#spot-chronology-correction).
+
+### Compatibility
+
+- Require `koval-engine>=0.12.6,<0.13.0` so package resolution cannot silently
+  select an engine with the earlier accounting and matching defects. Existing
+  users of older engines can retain adapter 0.12.2 with their exact engine pin.
+- CI and publication gates verify the corrected engine 0.12.6 pair. Publish and
+  independently verify the engine first, then publish this adapter. Local
+  artifacts do not establish public availability or application adoption.
+
 ## [0.12.2] - 2026-10-04
 
 ### Added
@@ -292,7 +324,8 @@ First public release. Extracted from a private monorepo with a clean history.
 - Releases publish to PyPI through Trusted Publishing (OIDC) with PEP 740
   attestations. No long-lived PyPI credential is used.
 
-[Unreleased]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.2...HEAD
+[Unreleased]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.3...HEAD
+[0.12.3]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/koval-finance/koval-backtrader/compare/v0.11.1...v0.12.0

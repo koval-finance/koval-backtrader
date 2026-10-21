@@ -57,8 +57,7 @@ def test_backtrader_is_a_declared_runtime_dependency():
     assert any(dep.startswith("backtrader") for dep in dependencies)
 
 
-@pytest.mark.parametrize("version", ["0.11.0", "0.11.1", "0.12.0", "0.12.1", "0.12.2", "0.12.4"])
-def test_engine_dependency_accepts_the_released_runtime_contract(version):
+def test_engine_dependency_accepts_the_corrected_runtime_contract():
     from packaging.requirements import Requirement
 
     requirement = next(
@@ -66,9 +65,22 @@ def test_engine_dependency_accepts_the_released_runtime_contract(version):
         for dep in _pyproject()["project"]["dependencies"]
         if dep.startswith("koval-engine")
     )
-    assert version in requirement.specifier
-    assert "0.13.0" not in requirement.specifier
-    assert "0.10.0" not in requirement.specifier
+    assert "0.12.6" in requirement.specifier
+
+
+@pytest.mark.parametrize(
+    "version",
+    ["0.10.0", "0.11.0", "0.11.1", "0.12.0", "0.12.1", "0.12.2", "0.12.4", "0.12.5", "0.13.0"],
+)
+def test_engine_dependency_rejects_engines_outside_the_corrected_contract(version):
+    from packaging.requirements import Requirement
+
+    requirement = next(
+        Requirement(dep)
+        for dep in _pyproject()["project"]["dependencies"]
+        if dep.startswith("koval-engine")
+    )
+    assert version not in requirement.specifier
 
 
 def test_the_licence_is_declared_as_gpl():

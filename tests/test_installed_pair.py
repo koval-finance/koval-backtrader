@@ -53,7 +53,8 @@ def test_dependency_range_admits_the_explicit_runtime_contract():
     requirement = next(
         Requirement(d) for d in config["project"]["dependencies"] if d.startswith("koval-engine")
     )
-    assert "0.12.0" in requirement.specifier
+    assert "0.12.6" in requirement.specifier
+    assert "0.12.5" not in requirement.specifier
     assert "0.13.0" not in requirement.specifier
 
 

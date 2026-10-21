@@ -166,15 +166,15 @@ editable/sibling package imports. The manifest records wheel hashes, versions,
 Python/platform, dependencies, verifier/test source identity and gate outcome.
 Retain its logs and artifacts in durable storage outside a disposable cache.
 
-CI tests engine 0.11.1, 0.12.0 and 0.12.1 with the built plugin on Python 3.11
-and 3.13. Publish engine 0.12.1 before expecting the new CI matrix to pass from
-PyPI.
+For adapter 0.12.3, CI tests engine 0.12.6 with the built plugin on Python 3.11
+and 3.13. Publish engine 0.12.6 before expecting the CI matrix to pass from PyPI.
 Local candidate validation and hosted CI are separate evidence.
 
-The permitted dependency range is `>=0.11.0,<0.13.0`. The original 0.11.0
-fallback remains for compatibility; its historical parity gaps are documented
-in [execution-validation.md](execution-validation.md). The range is not a
-claim that every possible pair passed this acceptance command.
+The permitted dependency range is `>=0.12.6,<0.13.0`. Older engine versions do
+not satisfy the corrected matching/accounting contract and are rejected by
+package resolution. Historical acceptance belongs to its recorded package
+versions in [execution-validation.md](execution-validation.md). The range is
+not a claim that every future pair passed this acceptance command.
 
 Public installed-engine fixtures, real GraphStrategy/LiveEngine comparisons,
 future-input mutations and an independent Decimal calculator cover simulation

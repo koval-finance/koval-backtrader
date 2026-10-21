@@ -94,11 +94,11 @@ def test_release_docs_match_the_project_version():
 
 
 @pytest.mark.parametrize("path", [CI_WORKFLOW, WORKFLOW])
-def test_installed_pair_covers_capable_and_supported_older_engines(path):
+def test_installed_pair_covers_the_corrected_supported_engine(path):
     workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
     versions = workflow["jobs"]["installed-pair"]["strategy"]["matrix"]["engine-version"]
 
-    assert versions == ["0.11.1", "0.12.0", "0.12.1", "0.12.2", "0.12.4"]
+    assert versions == ["0.12.6"]
     steps = workflow["jobs"]["installed-pair"]["steps"]
     assert any("scripts/verify_pair.py" in step.get("run", "") for step in steps)
 
