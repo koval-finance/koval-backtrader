@@ -81,7 +81,7 @@ jobs:
           "koval-engine==$ENGINE_VERSION" -d data_cache/pair-wheels
       - name: Verify installed artifacts and the complete suite
         run: python scripts/verify_pair.py --engine data_cache/pair-wheels/*.whl --plugin dist/*.whl --output data_cache/pair-acceptance.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: pair-${{ matrix.engine-version }}-python-${{ matrix.python-version }}
