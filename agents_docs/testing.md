@@ -34,6 +34,10 @@ workflow, sdist contents, version.
 
 ## No markers
 
+Native Spot acceptance is documented in [spot_multi_order.md](spot_multi_order.md).
+`test_spot_multi_order.py` consumes all 16 independent engine fixtures and compares
+all 11 candle reports with paper, through the normal plugin loader.
+
 The engine excludes `backtrader`-marked tests because it must not depend on
 Backtrader. Here every test needs it, so there is no subset to exclude and no
 partial run to defend. `pytest -q` is the whole suite.

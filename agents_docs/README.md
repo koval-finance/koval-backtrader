@@ -12,6 +12,7 @@ depth. Load only what the task calls for.
 | [agent_workflow.md](agent_workflow.md) | the work loop, the git policy, the hard rules |
 | [architecture.md](architecture.md) | the plugin seam, execution modules, the run path |
 | [testing.md](testing.md) | suite layout, fixtures, what "tested" means here |
+| [spot_multi_order.md](spot_multi_order.md) | native historical Spot contracts, modules and acceptance |
 | [release_process.md](release_process.md) | version truth, changelog gate, the tag pipeline |
 | [troubleshooting.md](troubleshooting.md) | dated failure memory |
 

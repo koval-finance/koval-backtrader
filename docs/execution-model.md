@@ -1,5 +1,8 @@
 # Execution model
 
+Native bounded Grid/DCA has a separately versioned [Spot execution model](spot-multi-order.md).
+The legacy profiles described below keep their existing semantics.
+
 Adapter 0.12.3 requires `koval-engine>=0.12.6,<0.13.0` for the corrected
 opening-price and midnight-risk contract. Earlier adapter releases and their
 exact engine pins retain the older behavior; historical acceptance records do

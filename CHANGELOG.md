@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Add a separate contract-v2 historical lane for native bounded Spot Grid and
+  price-drop DCA, using public engine controllers/accounting with an independent
+  Decimal causal matcher and shared candle liquidity.
+- Add explicit costs/evidence admission, journaled terminal/recovery barriers,
+  source-bound checkpoints, additive lots/basket reporting and all 16 public
+  engine fixture expectations through the normal loader.
+- Keep legacy brackets and dependency range unchanged. A distinct released engine
+  artifact/version and adapter release identity remain prerequisites; the engine
+  source currently retains the 0.12.6 label. Long-history scaling remains limited
+  by growing reducer state and checksummed snapshots.
+
 ## [0.12.3] - 2026-10-21
 
 ### Fixed

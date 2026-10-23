@@ -30,6 +30,9 @@ Backtrader object crosses the boundary in either direction.
 
 ## Modules
 
+Native Grid/DCA uses a separate [historical Spot lane](spot_multi_order.md).
+Legacy adapter/broker guards remain unchanged.
+
 ### `backtest_runner.py` — the plugin
 
 `BacktraderBacktestEngine.run()` is the only public surface. It checks the

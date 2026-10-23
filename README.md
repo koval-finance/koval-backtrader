@@ -102,6 +102,10 @@ Those two commands are executed verbatim by
 [`tests/test_examples.py`](https://github.com/koval-finance/koval-backtrader/blob/main/tests/test_examples.py)
 on every CI run, so a quickstart that has rotted fails the build.
 
+Native bounded Grid/DCA has an additive, unreleased
+[historical Spot contract](https://github.com/koval-finance/koval-backtrader/blob/main/docs/spot-multi-order.md)
+with explicit costs, reservations, causal matching and source-bound recovery.
+
 ## From Python
 
 Note what this does not contain: any mention of `koval_backtrader`. Consumer

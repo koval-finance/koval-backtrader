@@ -3,6 +3,9 @@
 Everything `BacktraderBacktestEngine.run()` gives back, field by field, with
 the definitions used to compute it.
 
+Native Grid/DCA uses the additive [Spot report and audit](spot-multi-order.md#results-journal-and-recovery).
+Its lots/baskets are separate from the legacy bracket trade list described below.
+
 `BacktestResult` is a plain dataclass owned by koval-engine:
 
 ```python

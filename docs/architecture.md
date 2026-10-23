@@ -35,7 +35,7 @@ in either direction, so a caller never links Backtrader by accident.
 
 ```
 src/koval_backtrader/
-├── backtest_runner.py   375 lines  the plugin: spec in, result out
+├── backtest_runner.py   396 lines  the plugin: spec in, result out
 ├── bt_adapter.py        1161 lines  DeclarativeStrategy → bt.Strategy bridge
 ├── bt_analyzers.py      131 lines  trade list and equity curve extraction
 └── oco_patch.py         188 lines  the Backtrader OCO bug fix

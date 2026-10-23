@@ -180,6 +180,27 @@ class BacktraderBacktestEngine:
         on_event: Callable[[dict], None] | None = None,
     ) -> BacktestResult:
         check_protocol_version(spec)
+        native_spot = any(
+            block.get("type") in {"exec.spot_dca", "exec.spot_grid"}
+            for block in spec.graph.get("blocks", [])
+        )
+        if (
+            native_spot
+            or isinstance(spec.execution_config, dict)
+            and "spot_multi_order" in spec.execution_config
+        ):
+            if (
+                not isinstance(spec.execution_config, dict)
+                or "spot_multi_order" not in spec.execution_config
+            ):
+                raise ValueError("native recipes require explicit spot_multi_order configuration")
+            try:
+                from koval_backtrader.spot_runner import run_spot
+            except ImportError as exc:
+                raise ValueError(
+                    "installed engine lacks the public Spot multi-order contract"
+                ) from exc
+            return run_spot(spec, on_event)
         model = resolve_execution_model(spec.execution_config)
         if len(spec.feeds) > 2:
             raise ValueError("this plugin supports at most two timeframes for one instrument")

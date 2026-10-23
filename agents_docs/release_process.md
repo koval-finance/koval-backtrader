@@ -35,6 +35,10 @@ virtualenv or treat a source override as installed-pair release evidence.
 
 ## Cutting a release
 
+Native Grid/DCA is currently source-only preparation; follow the explicit
+[Spot release prerequisites](spot_multi_order.md) before assigning its pair.
+The existing 0.12.6 version label alone cannot identify the unreleased API bytes.
+
 1. Update `[project].version`.
 2. Add a `## [x.y.z]` section to `CHANGELOG.md`. The release workflow extracts
    the notes from it and **fails if the section is missing**, so this is a
