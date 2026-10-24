@@ -10,7 +10,7 @@ from math import isfinite
 import backtrader as bt
 import numpy as np
 from koval.engine.engine_events import EngineEvent, EventType
-from koval.engine.history_window import DEFAULT_HISTORY_BARS
+from koval.engine.history_window import DEFAULT_HISTORY_BARS, resolve_history_bars
 from koval.engine.logger import get_logger
 from koval.engine.protection import validate_protection_update
 from koval.strategy.base.declarative import DeclarativeStrategy
@@ -21,6 +21,7 @@ from koval_backtrader.execution_account import ExecutionAccount, revalidated_ris
 from koval_backtrader.execution_config import COSTED_VERSIONS
 from koval_backtrader.execution_trace import ExecutionTrace
 from koval_backtrader.market_identity import rejects_direction
+from koval_backtrader.numeric_values import CAPABILITY
 from koval_backtrader.position_exit import require_features, validate_stop_only_update
 from koval_backtrader.research_metrics import segment_inputs
 from koval_backtrader.strategy_account import bind_strategy_account
@@ -145,7 +146,9 @@ class BTStrategyAdapter(bt.Strategy):
     def _timestamp_ms(self) -> int:
         timestamp = self.data.datetime.datetime(0)
         metadata = self.params.execution_metadata
-        if metadata is not None and metadata["version"] in COSTED_VERSIONS:
+        if CAPABILITY in self.params.execution_features or (
+            metadata is not None and metadata["version"] in COSTED_VERSIONS
+        ):
             return utc_ms(timestamp)
         # Legacy keeps naive-datetime epoch conversion for reproduction only.
         return int(timestamp.timestamp() * 1000)
@@ -187,7 +190,7 @@ class BTStrategyAdapter(bt.Strategy):
         try:
             s.volume = float(self.data.volume[0])
         except Exception:
-            s.volume = 0.0
+            s.volume = float("nan") if CAPABILITY in self.params.execution_features else 0.0
         s.bar_index = len(self.data)
         s.timestamp_ms = self._safe_timestamp_ms()
         s.decision_timestamp_ms = (
@@ -205,6 +208,7 @@ class BTStrategyAdapter(bt.Strategy):
         # Candle history arrays — chronological, [-1] == current bar.
         # data.line.get(ago=0, size=n) returns the last n bars in chronological order.
         n = min(int(self.params.history_bars), len(self.data))
+        s.history_start_ms = None if n <= 0 else num2utc_ms(self.data.datetime[-(n - 1)])
         if n > 0:
             s.closes = np.array(self.data.close.get(ago=0, size=n), dtype=float)
             s.highs = np.array(self.data.high.get(ago=0, size=n), dtype=float)
@@ -213,7 +217,11 @@ class BTStrategyAdapter(bt.Strategy):
             try:
                 s.volumes = np.array(self.data.volume.get(ago=0, size=n), dtype=float)
             except (AttributeError, IndexError):
-                s.volumes = np.zeros(n, dtype=float)
+                s.volumes = (
+                    None
+                    if CAPABILITY in self.params.execution_features
+                    else np.zeros(n, dtype=float)
+                )
 
         # Higher-timeframe history — injected only when a 2nd feed is present,
         # and only for bars that CLOSED before this primary bar's decision. A
@@ -1143,6 +1151,8 @@ def make_bt_strategy_class(
     The engine is strategy-agnostic — it calls this with any DeclarativeStrategy
     and gets back a BT-compatible class. The engine never knows the concrete strategy.
     """
+    if CAPABILITY in default_params.get("execution_features", ()):
+        resolve_history_bars(default_params.get("history_bars", DEFAULT_HISTORY_BARS))
     default_param_keys = {k for k, _ in _DEFAULT_PARAMS}
     base_params = tuple(
         (k, default_params[k]) if k in default_params else (k, v) for k, v in _DEFAULT_PARAMS

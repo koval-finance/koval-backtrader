@@ -170,6 +170,7 @@ def build_run_identity(
     initial_capital,
     consumed_bars,
     boundaries=None,
+    numeric_values=None,
 ) -> dict:
     """Everything needed to prove which inputs produced this result."""
     fingerprints = feed_fingerprints(feeds, durations)
@@ -192,6 +193,8 @@ def build_run_identity(
             "python": platform.python_version(),
         },
     }
+    if numeric_values is not None:
+        identity["numeric_values"] = numeric_values
     timeframe = ordered_timeframes[0]
     preroll_count = (
         0
@@ -236,6 +239,7 @@ def build_run_identity(
         execution_evidence=model.execution_evidence.manifest(),
         strategy_sha256=graph_sha256(graph),
         run_parameters={
+            **({"numeric_values": numeric_values} if numeric_values is not None else {}),
             **({"runtime_contract": boundaries.as_dict()} if boundaries is not None else {}),
             "initial_capital": float(initial_capital),
             "max_window": int(history_bars),

@@ -1,5 +1,87 @@
 # Execution model
 
+## Numeric values
+
+This source includes local artifact support for the optional MIT
+`numeric_values_v1` contract. A distribution version alone does not establish
+support. Inspect the object returned by the normal MIT loader:
+
+```python
+from koval.engine.backtest_engine import load_backtest_engine
+
+engine = load_backtest_engine()
+report = engine.numeric_values_capabilities()
+```
+
+The additive adapter-only signature is
+`numeric_values_capabilities(self) -> dict`. It performs no simulation or venue
+I/O, returns detached metadata, and leaves `BacktestEngineProtocol.run` unchanged.
+Callers must require `available` and match the declared scope before launch;
+`run` independently enforces the same restrictions.
+
+| Field | Value / meaning |
+|---|---|
+| `schema_version` | `koval_backtrader_numeric_capabilities_v1` |
+| `capability` | `numeric_values_v1` |
+| `available` | Actual optional MIT contract is present, regardless of version label |
+| `reason` | `null`, or `missing_engine_numeric_contract` |
+| `availability_model` | `historical_ideal_close_v1` |
+| `supported_modes` | `["historical"]` |
+| `supported_profiles` | `["ohlcv_realistic_v2"]` |
+| `supported_market` | `exchange=binance`, `market=spot`, `leverage=1`, `direction=long`, `funding=cash` |
+| `supported_timeframes` | `["1m", "5m", "15m", "1h", "4h", "1d"]` |
+| `history_bars` | `1000`, the actual public runner budget |
+| `feed_count` | `1` |
+| `timestamp_policy` | `aligned_contiguous_integer_open_ms` |
+| `adapter_resume_supported` | `false` |
+
+An explicit `required_execution_capabilities=("numeric_values_v1",)` request and
+an inferred numeric graph have identical admission. Unsupported engines, modes,
+profiles, markets and multiple/unsupported timeframes refuse. Numeric-only
+graphs do not require Position Exit. Condition-driven exits separately require
+the existing `position_exit_v1` capability and retain next-eligible-open fills,
+protective opening priority, partial inventory and fees. Graph intents alone
+do not establish any fill or price.
+
+The host validates every primary candle open timestamp, including the interior
+of the feed, for integer milliseconds, uniqueness, increasing order, interval
+alignment and continuity before runtime construction. Gaps are rejected. Arrays
+remain chronological with `[-1]` the current closed candle; `history_start_ms`
+is the actual oldest retained open, and the decision clock is current open plus
+the validated interval. Availability is ideal historical close, with no observed
+receive-time, paper, Testnet, HTF or alternative-symbol claim.
+
+The engine owns all value/condition formulas, units, readiness, reason and
+provenance. Unavailable values remain null. Public costed `(N, 6)` ndarrays
+reject absent or nonfinite volume. For custom numeric factory feeds, an absent
+volume line remains an absent array/scalar NaN; a measured zero remains zero.
+No new MIT context field or substitute formula is introduced.
+
+The default history budget remains 1000; it is not the numeric period limit of
+400. A period-400 channel with offset 20 needs 421 retained bars and fits.
+Requirements above the accepted host budget refuse before construction, with
+no silent resize or recursive seed change. EngineRunSpec has no history budget
+field. The existing direct strategy factory override remains available and
+numeric overrides use the existing 2..100000 host resolver. Preparation,
+arrays, derived series and recorded evidence must use the same accepted budget.
+Derived series require the explicit original symbol, timeframe and full prefix.
+
+Numeric execution metadata and run identity contain `numeric_values`, the
+discovery report plus `formula_version=numeric_value_v1`,
+`engine_source_sha256`, and
+`source_encoding=relative_path_nul_bytes_nul_py_json_checksums_v1`. This existing
+source identity hashes sorted relative paths, a NUL, file bytes and another NUL
+for `.py`, `.json` and `CHECKSUMS.txt` under the loaded MIT package. It is distinct
+from wheel hashes and Python-only canonical fingerprints. Numeric run parameters
+include this contract; legacy defaults and normalized graph hashes are unchanged.
+Recorded decision evidence remains `koval_trade_decision_context_v1`.
+
+Graph state hooks retain version 1, including cross state version 1. A restored
+already-stepped bar returns an empty transient result; the next graph bar matches
+uninterrupted processing. Pending submitted broker intents belong to execution
+journals, not graph replay. This adapter offers deterministic full-run replay,
+and does not offer numeric broker resume or crash recovery.
+
 Native bounded Grid/DCA has a separately versioned [Spot execution model](spot-multi-order.md).
 The legacy profiles described below keep their existing semantics.
 

@@ -1,5 +1,45 @@
 # Architecture
 
+## Historical numeric values
+
+`numeric_values.py` admits `numeric_values_v1` only with the actual optional MIT
+numeric contract. Imports remain lazy so same-version engines without those
+modules can still load the plugin and execute legacy graphs. Both explicit and
+graph-inferred requests require one declared Binance Spot cash-funded long-only
+1x market, `ohlcv_realistic_v2`, and one 1m/5m/15m/1h/4h/1d feed. This scope does
+not imply the graph needs `position_exit_v1`; exit graphs negotiate it separately.
+
+Admission validates every supplied primary timestamp before preparation or
+strategy/feed/broker construction: finite integer, unique increasing, aligned
+and contiguous candle opens. There is no gap filling or compressed timeline.
+The MIT `graph_required_history_bars` requirement must fit the actual unchanged
+1000-bar public runner budget. No automatic growth or clamping is permitted.
+The existing `make_bt_strategy_class(..., history_bars=...)` factory override
+uses the engine's 2..100000 resolver for numeric hosts; EngineRunSpec gains no
+budget field. Preparation receives the same budget as chronological arrays.
+
+On every numeric closed primary bar, the adapter binds `history_start_ms` to
+the oldest retained candle open and `decision_timestamp_ms` to current open plus
+the validated interval. Numeric direct factory hosts also use UTC conversion.
+Absent custom volume lines produce scalar NaN and absent arrays; nonfinite
+measurements remain nonfinite and measured zero stays zero. Costed public
+ndarrays already reject absent/nonfinite volume before construction. Legacy
+missing-line zero fallbacks and naive legacy clock behavior remain unchanged.
+
+The optional loader-returned `numeric_values_capabilities(self) -> dict` is
+read-only and does not alter the MIT protocol or run signature. Its exact
+schema and scope are documented in [the execution model](../docs/execution-model.md#numeric-values).
+Numeric runs bind the contract and loaded MIT source digest into execution
+metadata and run parameters/identity; legacy identity fields are not extended.
+The digest reuses `spot_identity.source_identity` and its documented byte
+encoding, distinct from a wheel SHA or a Python-only canonical fingerprint.
+
+Public graph state export/restore is a post-bar checkpoint: restoring the same
+stepped bar yields no transient intent, and the next step matches uninterrupted
+graph evaluation. It does not restore pending broker intents. Numeric adapter
+resume/crash recovery remains unsupported; full deterministic rerun is tested.
+Matcher, costs, protection and order lifecycle remain the existing contracts.
+
 One entry point, four core modules and three execution modules. This document covers what
 each module owns and how a run flows through them.
 

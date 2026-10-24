@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Add optional `numeric_values_capabilities()` discovery and historical numeric
+  admission for a separately identified engine artifact providing
+  `numeric_values_v1`. Restrict it to one declared Binance Spot cash long-only
+  1x primary feed, realistic v2 costs and supported aligned contiguous intervals.
+- Bind actual retained history timing, preserve missing custom volume, refuse
+  oversized numeric history requirements, and record the numeric contract and
+  loaded engine source identity. Keep legacy runs and matching unchanged.
+- Verify public channel/BB entries, condition-driven exits, partial protection,
+  fees, evidence, bounded-history equality and post-bar graph state replay.
+  Numeric broker resume and paper/venue execution remain unsupported.
+
 - Add a separate contract-v2 historical lane for native bounded Spot Grid and
   price-drop DCA, using public engine controllers/accounting with an independent
   Decimal causal matcher and shared candle liquidity.

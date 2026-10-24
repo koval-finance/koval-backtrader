@@ -38,6 +38,7 @@ from koval_backtrader.execution_config import (
     resolve_execution_model,
 )
 from koval_backtrader.execution_evidence import validate_evidence_coverage
+from koval_backtrader.numeric_values import CAPABILITY, admit_numeric, capabilities, run_contract
 from koval_backtrader.oco_patch import apply_oco_guard
 from koval_backtrader.position_exit import (
     POSITION_FEATURES,
@@ -174,6 +175,10 @@ def _open_position_view(position, last_close: float) -> dict | None:
 class BacktraderBacktestEngine:
     """Runs a backtest with Backtrader. Implements ``BacktestEngineProtocol``."""
 
+    def numeric_values_capabilities(self) -> dict:
+        """Read-only optional adapter discovery; does not widen the MIT protocol."""
+        return capabilities()
+
     def run(
         self,
         spec: EngineRunSpec,
@@ -206,6 +211,7 @@ class BacktraderBacktestEngine:
             raise ValueError("this plugin supports at most two timeframes for one instrument")
         if model.version in COSTED_VERSIONS:
             _validate_fixed_inputs(spec)
+        numeric = admit_numeric(spec, model)
         spec, boundaries = prepare_runtime(spec)
         if boundaries is not None and model.version not in COSTED_VERSIONS:
             raise ValueError("runtime boundaries require a costed execution profile")
@@ -215,6 +221,8 @@ class BacktraderBacktestEngine:
                 for row in candles:
                     identity.append(row)
         features = ["run_identity"]
+        if numeric:
+            features += [CAPABILITY]
         if boundaries is not None:
             features += ["runtime_boundaries_v1"]
         if model.version == REALISTIC_VERSION:
@@ -246,6 +254,9 @@ class BacktraderBacktestEngine:
                     )
             validate_evidence_coverage(model.execution_evidence, primary[:, 0])
         metadata = execution_metadata(model)
+        numeric_contract = run_contract() if numeric else None
+        if numeric_contract is not None:
+            metadata["numeric_values"] = numeric_contract
         if boundaries is not None:
             metadata["runtime_contract"] = boundaries.as_dict()
             metadata["assumptions"]["end_of_data"] = boundaries.end_of_data_policy
@@ -347,6 +358,7 @@ class BacktraderBacktestEngine:
             initial_capital=spec.initial_capital,
             consumed_bars=len(equity_curve),
             boundaries=boundaries,
+            numeric_values=numeric_contract,
         )
         position = cerebro.broker.getposition(strat.data)
         if model.version in COSTED_VERSIONS:
