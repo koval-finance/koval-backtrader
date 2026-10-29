@@ -5,11 +5,11 @@ import json
 from copy import deepcopy
 from dataclasses import replace
 from decimal import Decimal
-from importlib.resources import files
 
 import pytest
 from koval.engine.execution_proxy import ExecutionLatency, ExecutionProxyConfig
 from koval.engine.funding import FundingRecord, build_funding_series
+from koval.examples import example_path
 
 from koval_backtrader.backtest_runner import create_engine
 from tests.test_evidence_transport import evidence_set, transport_spec
@@ -104,9 +104,8 @@ def test_installed_engine_public_runtime_fixtures_have_no_waivers():
     spec = spec_for()
     if unsupported_runtime(spec):
         return
-    directory = files("koval").joinpath("examples/runtime")
-    fixtures = sorted(p for p in directory.iterdir() if p.name.endswith(".json"))
-    assert fixtures
+    # The directory also contains graph-state and value fixtures with other schemas.
+    fixtures = [example_path("runtime", "explicit_boundaries_v1.json")]
     for path in fixtures:
         fixture = json.loads(path.read_text())
         import numpy as np

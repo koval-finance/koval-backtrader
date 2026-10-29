@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.4] - 2026-10-29
+
+### Added
+
 - Add optional `numeric_values_capabilities()` discovery and historical numeric
   admission for a separately identified engine artifact providing
   `numeric_values_v1`. Restrict it to one declared Binance Spot cash long-only
@@ -23,10 +27,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Add explicit costs/evidence admission, journaled terminal/recovery barriers,
   source-bound checkpoints, additive lots/basket reporting and all 16 public
   engine fixture expectations through the normal loader.
-- Keep legacy brackets and dependency range unchanged. A distinct released engine
-  artifact/version and adapter release identity remain prerequisites; the engine
-  source currently retains the 0.12.6 label. Long-history scaling remains limited
+- Keep legacy bracket behavior unchanged. Long-history scaling remains limited
   by growing reducer state and checksummed snapshots.
+
+### Compatibility and validation
+
+- Require published `koval-engine>=0.12.7,<0.13.0`, the first release with the
+  native Spot and numeric contracts. Engine 0.12.6 remains available with adapter
+  0.12.3 for reproducing the earlier corrected simulation contract.
+- Verify the exact installed engine 0.12.7 and 0.12.8 wheel pairs in normal and
+  release CI on Python 3.11/3.13; retain the normal Python 3.11/3.12/3.13 gate.
+- Select the named public runtime-boundary fixture rather than interpreting
+  unrelated graph-state fixtures as candle/account scenarios. Preserve its
+  account assertions and add the public historical level graph's next-open,
+  quote-fee, cash reconciliation and volume-veto checks through the real loader.
+- Exclude ignored maintainer-local planning files from source distributions;
+  test the built archive with a private planning sentinel present.
 
 ## [0.12.3] - 2026-10-21
 
@@ -346,7 +362,8 @@ First public release. Extracted from a private monorepo with a clean history.
 - Releases publish to PyPI through Trusted Publishing (OIDC) with PEP 740
   attestations. No long-lived PyPI credential is used.
 
-[Unreleased]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.3...HEAD
+[Unreleased]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.4...HEAD
+[0.12.4]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.3...v0.12.4
 [0.12.3]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.0...v0.12.1

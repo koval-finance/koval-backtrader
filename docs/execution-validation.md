@@ -1,5 +1,47 @@
 # Execution validation and release review
 
+## Published engine compatibility
+
+The 2026-10-29 adapter 0.12.4 candidate requires the published
+`koval-engine>=0.12.7,<0.13.0` contracts. Engine 0.12.7 is the first public wheel
+with `spot_multi_order` and numeric graph values; 0.12.8 is the latest published
+engine inspected for this acceptance. Engine 0.12.6 lacks both APIs, so the old
+installed-pair matrix cannot collect the native Spot tests. Dependency and
+workflow tests were observed failing before raising the floor and configuring
+both published engines in normal/release CI.
+
+The unchanged source baseline with the PyPI engine 0.12.8 wheel passed 1156
+tests and failed one runtime fixture test: it treated every JSON in the engine's
+runtime directory as a boundary/account scenario. That directory also contains
+numeric/graph-state fixtures with different schemas. The boundary test now reads
+the named `explicit_boundaries_v1.json` resource and retains every account
+expectation. The public historical level graph also runs through the normal
+plugin loader, checking next-open entry/exit, equal actual inventory, quote fees,
+hand-derived final cash and the no-trade volume-veto variant. No execution
+expectation, tolerance or waiver was relaxed.
+
+On Python 3.13.5 / macOS x86_64, both exact installed-wheel pairs passed the
+complete `scripts/verify.sh` gate: **1161 tests each**, with lint and formatting
+clean, no failed or skipped tests, `pip check` clean, normal entry-point
+discovery, and every installed package byte matching its wheel. The plugin
+wheel and sdist matched current package sources and version metadata; strict
+Twine validation passed. A source-distribution sentinel test reproduced a
+maintainer-local planning leak before the manifest exclusion; the rebuilt
+archive excludes those files while retaining all public tests and documents.
+
+| Artifact | Verified wheel SHA256 |
+| --- | --- |
+| Engine 0.12.7 | `28ff60cee7be00cb8a8d5ff84d8b198efd93702e838e6e3a7c17c83a6234b8b6` |
+| Engine 0.12.8 | `d37968eefe25e97837728e1ccfe3e2fa05e6ffade85b48e8d54b7c4ded1517df` |
+| Adapter 0.12.4 candidate | `2753d5d3b23d2a985bf4cf778eb8a742cfe51c24eabd08e5061e3738b737abce` |
+
+Both engine hashes were checked against PyPI's version-specific JSON metadata.
+The adapter wheel is a local candidate, not a published PyPI artifact. Local
+Python 3.11/3.12 verification and a successful hosted CI run are not claimed.
+The acceptance scope is historical offline simulation, not broker resume,
+venue execution, application adoption or publication. The configured Python
+3.11/3.12/3.13 CI matrix is distinct from the local runtimes actually measured.
+
 ## Spot chronology correction
 
 The 2026-10-21 correction supersedes the older acceptance records below for

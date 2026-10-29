@@ -14,13 +14,17 @@ through Backtrader's `Cerebro` and hands back metrics, closed trades, an
 equity curve, and — if you ask for it — the full stream of decisions that
 produced them. No Backtrader object crosses back into your code.
 
-**Status:** 0.12.x. Supports `koval-engine>=0.12.6,<0.13.0`. The public API may
+**Status:** 0.12.x. Supports `koval-engine>=0.12.7,<0.13.0`. The public API may
 change before 1.0.
 
 Version 0.12.3 corrects opening-price protection priority, intrabar entry target
 pricing and UTC-midnight risk accounting with engine 0.12.6. Both packages are
 required for the corrected simulation contract. Retain the exact engine and
 adapter versions when reproducing older results.
+
+Version 0.12.4 adds native historical Spot Grid/DCA and numeric graph values.
+It requires the published engine 0.12.7 contracts and verifies installed wheel
+pairs with engines 0.12.7 and 0.12.8. Engine 0.12.6 can retain adapter 0.12.3.
 
 Execution costs are an explicit, versioned model rather than a hidden default.
 What it does and does not simulate is stated in full in the
@@ -40,7 +44,7 @@ with protection. Separate exit evidence and unfinished terminal intent survive
 export. Only explicit `take_profit_mode="disabled"` suppresses the target;
 missing/default bracket and old null targets retain their previous fallback.
 
-Adapter 0.12.3 requires engine 0.12.6 or later in the 0.12 series. A graph
+Adapter 0.12.4 requires engine 0.12.7 or later in the 0.12 series. A graph
 requiring either capability fails before simulation resources are created when
 the execution profile cannot support it. Paper and live hosts do not support
 these features. See the [execution model](docs/execution-model.md)
@@ -102,7 +106,7 @@ Those two commands are executed verbatim by
 [`tests/test_examples.py`](https://github.com/koval-finance/koval-backtrader/blob/main/tests/test_examples.py)
 on every CI run, so a quickstart that has rotted fails the build.
 
-Native bounded Grid/DCA has an additive, unreleased
+Native bounded Grid/DCA has an additive
 [historical Spot contract](https://github.com/koval-finance/koval-backtrader/blob/main/docs/spot-multi-order.md)
 with explicit costs, reservations, causal matching and source-bound recovery.
 
@@ -250,7 +254,7 @@ The [runtime assurance guide](docs/runtime-assurance.md) covers explicit
 warmup/evaluation windows, terminal policies, persisted audit links and
 verification of exact installed wheel pairs.
 
-Requires Python 3.11+ and `koval-engine>=0.12.6,<0.13.0`. The upper bound
+Requires Python 3.11+ and `koval-engine>=0.12.7,<0.13.0`. The upper bound
 tracks the engine's backtest protocol version; when the engine raises it,
 this package needs a release rather than a looser pin.
 

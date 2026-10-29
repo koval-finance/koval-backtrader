@@ -23,6 +23,7 @@ exist.
 | No plugin source directly imports venue clients | [`tests/test_public_surface.py`](../tests/test_public_surface.py) |
 | No private planning language reaches the published tree | [`tests/test_public_language.py`](../tests/test_public_language.py) |
 | The sdist contains the whole public test suite | [`tests/test_sdist_contents.py`](../tests/test_sdist_contents.py) |
+| Maintainer-local planning files never enter the sdist | [`tests/test_sdist_contents.py`](../tests/test_sdist_contents.py) |
 | The release pipeline gates on lint, tests, and the changelog | [`tests/test_release_workflow.py`](../tests/test_release_workflow.py) |
 | Fills, costs and account state agree with the MIT paper broker | [`tests/test_paper_parity.py`](../tests/test_paper_parity.py) |
 | Every divergence from paper carries a declared reason code, and a stale exemption fails | [`tests/test_paper_parity.py`](../tests/test_paper_parity.py) |

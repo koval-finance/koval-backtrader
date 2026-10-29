@@ -7,15 +7,13 @@ and one fill-based shared target. Scheduled DCA is unsupported.
 
 ## Compatibility and release status
 
-This is unreleased adapter work on the 0.12.3 source baseline. It requires the
-completed public `koval.engine.spot_multi_order` contract, not merely a version
-string. The inspected engine source still declares 0.12.6; that version label
-alone does not establish availability of this feature. An engine
-release version and exact artifact must be assigned and verified by the owner
-before choosing the new adapter version/floor and enabling release CI adoption.
-The existing dependency range remains `koval-engine>=0.12.6,<0.13.0`; it describes
-legacy compatibility, not proof of new capability availability. Missing new APIs
-fail closed. No compatible released Grid/DCA package pair is claimed.
+Adapter 0.12.4 requires `koval-engine>=0.12.7,<0.13.0`, using the published
+`koval.engine.spot_multi_order` contract. Normal and release CI verify the exact
+engine 0.12.7 and 0.12.8 wheels with the built adapter. Missing APIs fail closed.
+Local candidate acceptance is recorded in
+[execution-validation.md](execution-validation.md#published-engine-compatibility);
+it does not establish adapter publication or application adoption. Adapter
+0.12.3 and engine 0.12.6 remain the earlier legacy-only package pair.
 
 Protocol 2 and execution contract 2 are required. Static graph negotiation requires
 `spot_multi_order_v1`, `spot_reservations_v1`, `spot_causal_ohlcv_v1`,

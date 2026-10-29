@@ -3,6 +3,22 @@
 Dated failure memory. Newest first. Add an entry when a failure costs more
 than a few minutes to understand — the next reader is usually you.
 
+## 2026-10-29 — native Spot CI uses an engine without its public contracts
+
+**Symptom:** all main CI jobs fail while collecting `test_spot_multi_order.py`:
+engine 0.12.6 has no `koval.engine.spot_multi_order`. With published engine
+0.12.8, the runtime-fixture test instead raises `KeyError: candles`.
+**Cause:** adapter source adopted new contracts before the dependency floor and
+installed-pair matrix adopted their first published engine 0.12.7. Separately,
+the runtime directory now contains multiple JSON schemas; not every file is a
+boundary/account fixture.
+**Fix:** adapter 0.12.4 requires engine 0.12.7 and tests exact 0.12.7/0.12.8
+pairs. Select the named boundary fixture without changing account expectations;
+exercise the new public historical level graph and volume veto separately
+through the real plugin loader. Retain all execution assertions, with no waivers
+or skips. Local acceptance does not change the remote CI result until the owner
+commits and pushes the code changes.
+
 ## 2026-10-21 — corrected engine exposes 12 paper-parity failures
 
 **Symptom:** engine 0.12.6 with unchanged adapter 0.12.2 fails ten fixed and two

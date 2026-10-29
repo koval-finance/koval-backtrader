@@ -68,6 +68,9 @@ def test_sdist_contains_every_public_test(tmp_path):
             *_local_only_names(),
         ),
     )
+    private_plan = source / "docs" / "superpowers" / "local-plan.md"
+    private_plan.parent.mkdir(parents=True, exist_ok=True)
+    private_plan.write_text("Maintainer-local planning sentinel.\n")
     build = subprocess.run(
         [
             sys.executable,
@@ -96,6 +99,7 @@ def test_sdist_contains_every_public_test(tmp_path):
 
     assert _public_test_files() <= members
     assert REQUIRED_SOURCE_FILES <= members
+    assert not any(path.parts[:2] == ("docs", "superpowers") for path in members)
     assert Path("REALISTIC_TRADING_ROADMAP.md") not in members
     assert not any("__pycache__" in path.parts or path.suffix == ".pyc" for path in members)
 

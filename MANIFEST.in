@@ -13,4 +13,5 @@ graft docs
 graft examples
 graft scripts
 graft tests
+prune */superpowers
 global-exclude *.py[cod]

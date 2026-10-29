@@ -37,6 +37,11 @@ workflow, sdist contents, version.
 Native Spot acceptance is documented in [spot_multi_order.md](spot_multi_order.md).
 `test_spot_multi_order.py` consumes all 16 independent engine fixtures and compares
 all 11 candle reports with paper, through the normal plugin loader.
+Adapter 0.12.4 tests the published engine 0.12.7 floor and latest 0.12.8 as exact
+installed wheel pairs. `test_engine_compatibility.py` executes the public level
+graph and its volume-veto variant with independent fill/fee/cash assertions.
+The runtime-boundary test reads its named fixture: other JSON schemas in the
+engine's runtime directory describe value/state contracts, not account scenarios.
 
 The engine excludes `backtrader`-marked tests because it must not depend on
 Backtrader. Here every test needs it, so there is no subset to exclude and no

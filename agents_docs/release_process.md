@@ -9,7 +9,7 @@ distribution metadata, so there is no second copy to drift. There is no
 
 ## Compatibility with the engine
 
-The dependency is a range — currently `koval-engine>=0.12.6,<0.13.0` — never
+The dependency is a range — currently `koval-engine>=0.12.7,<0.13.0` — never
 an exact pin. A plugin that hard-pins one engine patch version forces every
 downstream user into lockstep upgrades.
 
@@ -19,25 +19,24 @@ constant, `check_protocol_version()` starts rejecting specs, and the correct
 response is a new release of this package with a widened range — not a
 loosened bound hoping for the best.
 
-Adapter 0.12.3 requires the engine 0.12.6 chronology and midnight-risk
-corrections. Older engines are outside this release's dependency range; users
+Adapter 0.12.4 requires the engine 0.12.7 native Spot and numeric contracts,
+including the earlier 0.12.6 chronology and midnight-risk corrections.
+Older engines are outside this release's dependency range; users
 reproducing old results retain their exact earlier engine and adapter pins.
-Normal CI and release CI both verify the supported engine 0.12.6 pair on Python
+Normal CI and release CI both verify engine 0.12.7 and 0.12.8 pairs on Python
 3.11/3.13, in addition to the normal 3.11/3.12/3.13 suite. No parity waiver,
 tolerance or skip substitutes for corrected-pair acceptance. See the
 [current validation scope](../docs/execution-validation.md#spot-chronology-correction).
 
-Publish and independently verify engine 0.12.6 before pushing the adapter
-preparation commit or tag: both workflows install the declared engine range
-from PyPI. Local validation must use the exact unpublished engine wheel in an
-isolated environment until that publication is complete. Never patch a sibling
-virtualenv or treat a source override as installed-pair release evidence.
+Both engine versions are published. Download and verify their exact PyPI wheels
+before adapter acceptance: both workflows install from PyPI. Never patch a
+sibling virtualenv or treat a source override as installed-pair release evidence.
 
 ## Cutting a release
 
-Native Grid/DCA is currently source-only preparation; follow the explicit
-[Spot release prerequisites](spot_multi_order.md) before assigning its pair.
-The existing 0.12.6 version label alone cannot identify the unreleased API bytes.
+Native Grid/DCA uses the published engine 0.12.7 contract; follow the exact-wheel
+[Spot release prerequisites](spot_multi_order.md) before publishing the adapter.
+The local 0.12.4 candidate and its passing acceptance do not establish publication.
 
 1. Update `[project].version`.
 2. Add a `## [x.y.z]` section to `CHANGELOG.md`. The release workflow extracts
@@ -67,6 +66,8 @@ deletion. The gates run before the upload for that reason.
 
 Build with `python -m build`. Every local wheel and sdist must match current
 package bytes and version metadata; the default suite rejects stale artifacts.
+The sdist explicitly prunes ignored local planning files; the archive test
+plants a sentinel to prove these files cannot travel with public documentation.
 Then run `python scripts/check_dist.py --require-artifacts`,
 `python -m twine check --strict dist/*`, and `./scripts/verify.sh`.
 Install the wheel into a fresh environment outside the checkout, run `pip check`

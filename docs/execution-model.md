@@ -85,8 +85,9 @@ and does not offer numeric broker resume or crash recovery.
 Native bounded Grid/DCA has a separately versioned [Spot execution model](spot-multi-order.md).
 The legacy profiles described below keep their existing semantics.
 
-Adapter 0.12.3 requires `koval-engine>=0.12.6,<0.13.0` for the corrected
-opening-price and midnight-risk contract. Earlier adapter releases and their
+Adapter 0.12.4 requires `koval-engine>=0.12.7,<0.13.0` for native Spot and numeric
+contracts, including the corrected opening-price and midnight-risk contract.
+Earlier adapter releases and their
 exact engine pins retain the older behavior; historical acceptance records do
 not establish corrected parity. Explicit runtime boundaries are supported. See
 [runtime-assurance.md](runtime-assurance.md) for windows, terminal policies,
@@ -103,7 +104,7 @@ fills. See the [verification and review record](execution-validation.md).
 ### Historical signal exits and optional targets
 
 Available from adapter 0.12.2 with the published engine 0.12.4 contracts.
-Adapter 0.12.3 includes those engine contracts through its minimum dependency;
+Adapter 0.12.4 includes those engine contracts through its minimum dependency;
 unsupported profiles still refuse them before simulation resources are created.
 
 `position_exit_v1` and `optional_take_profit_v1` are offered only by
