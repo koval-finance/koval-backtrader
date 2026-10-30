@@ -30,8 +30,18 @@ Inputs:
 | `graph` | `dict` | A validated block graph. Call `assemble_from_graph()` to get a `DeclarativeStrategy`, or interpret it yourself. |
 | `feeds` | `dict[str, np.ndarray]` | Timeframe label to an `(N, 6)` float array: `timestamp_ms, open, high, low, close, volume`. |
 | `initial_capital` | `float` | |
-| `execution_config` | `dict \| None` | Venue description. `resolve_execution_settings()` turns it into fee rates. `None` means run without fees. |
-| `protocol_version` | `int` | Call `check_protocol_version(spec)` first and let it raise. |
+| `execution_config` | `dict \| None` | Execution assumptions and normalized evidence. Legacy venue settings resolve through `resolve_execution_settings()`; versioned profiles and native Spot use their own explicit contracts. `None` keeps the fee-free legacy path. |
+| `protocol_version` | `int` | Defaults to `2`; protocol `1` remains accepted without runtime boundaries. Call `check_protocol_version(spec)` first and let it raise. |
+| `execution_contract_version` | `int` | Defaults to `1`. Negotiate the requested execution contract before running; native Spot requires `2`. |
+| `required_execution_capabilities` | `tuple[str, ...]` | Defaults to `()`. Caller requirements combine with graph-inferred capabilities; refuse every requirement the plugin cannot implement. |
+| `runtime_contract` | `dict \| None` | Optional protocol-2 warmup/evaluation interval, account baselines, bar-close clock and terminal policy. `None` preserves legacy boundaries. |
+
+Protocol validation alone does not establish execution support. Call
+`negotiate_execution_capabilities(spec, offered)` with an `ExecutionCapabilities`
+record before constructing a strategy, feed or broker. Implement every negotiated
+feature, including boundary coverage and terminal behavior when offering
+`runtime_boundaries_v1`. The native [Spot lane](spot-multi-order.md) requires its
+own capability set and binding evaluation interval; it refuses `runtime_contract`.
 
 Output is a `BacktestResult` with `metrics`, `trades`, and `equity_curve`.
 Nothing enforces the shape of those dicts, so match
@@ -45,11 +55,20 @@ if it cannot.
 
 ## A working example
 
-Complete, and it runs:
+This loader example values a buy-and-hold price series. It ignores graph decisions
+and venue fee labels, and does not model execution costs or produce a trade ledger.
+It refuses requested execution capabilities and contract v2, so it cannot silently
+stand in for the supported historical execution lanes.
 
 ```python
 # my_engine.py
-from koval.engine.backtest_engine import BacktestResult, EngineRunSpec, check_protocol_version
+from koval.engine.backtest_engine import (
+    BacktestResult,
+    EngineRunSpec,
+    ExecutionCapabilities,
+    check_protocol_version,
+    negotiate_execution_capabilities,
+)
 from koval.engine.timeframe_utils import ordered_timeframes
 
 
@@ -58,6 +77,14 @@ class BuyAndHoldEngine:
 
     def run(self, spec: EngineRunSpec, on_event=None) -> BacktestResult:
         check_protocol_version(spec)
+        negotiate_execution_capabilities(
+            spec, ExecutionCapabilities(execution_contract_versions=(1,), features=())
+        )
+        if spec.execution_config is not None and set(spec.execution_config) - {
+            "exchange",
+            "exchange_type",
+        }:
+            raise ValueError("this example does not support execution assumptions or evidence")
         candles = spec.feeds[ordered_timeframes(list(spec.feeds))[0]]
         first, last = float(candles[0][4]), float(candles[-1][4])
         final = spec.initial_capital * last / first

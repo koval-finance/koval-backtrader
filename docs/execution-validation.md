@@ -1,5 +1,32 @@
 # Execution validation and release review
 
+## Patch 0.12.5 candidate
+
+Prepared 2026-10-30 after the
+[Founder Spot technical review](technical-review-2026-10-30.md). The patch's
+behavior, manual publication steps and host identity migration are documented
+in the [release guide](release-0.12.5.md).
+
+Both exact installed-wheel pairs passed the full `scripts/verify.sh` gate in
+fresh Python 3.13.5 environments: **1174 tests each**, no failures or skips,
+Ruff lint/format clean, `pip check` clean, normal entry-point discovery and all
+installed engine/plugin package bytes matching their wheels. The isolated
+wheel/sdist build, artifact/source checker and strict Twine validation passed.
+
+| Pair | Acceptance | Local gate time |
+| --- | --- | --- |
+| Engine 0.12.7 / adapter 0.12.5 | [Installed-pair manifest](acceptance/2026-10-30/pair-engine-0.12.7-adapter-0.12.5-py313.json) | 85.76 s |
+| Engine 0.12.8 / adapter 0.12.5 | [Installed-pair manifest](acceptance/2026-10-30/pair-engine-0.12.8-adapter-0.12.5-py313.json) | 85.86 s |
+
+Candidate wheel SHA-256:
+`6c84af34d545c2ce2f2004d5abecae97f3cb6d465e95a7351e8862449d423c07`.
+The engine wheels were freshly downloaded and checked against version-specific
+PyPI metadata; their hashes match the older engine records below. A separate
+candidate-wheel application lane passed 130 historical/paper/numeric/native
+recipe checks. Current exact Testnet/production/lock refusals were separately
+verified without venue requests. Application adoption, new acceptance locks,
+hosted CI, local Python 3.11/3.12 execution and publication are not claimed.
+
 ## Published engine compatibility
 
 The 2026-10-29 adapter 0.12.4 candidate requires the published

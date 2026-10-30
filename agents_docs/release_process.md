@@ -19,7 +19,7 @@ constant, `check_protocol_version()` starts rejecting specs, and the correct
 response is a new release of this package with a widened range — not a
 loosened bound hoping for the best.
 
-Adapter 0.12.4 requires the engine 0.12.7 native Spot and numeric contracts,
+Adapter 0.12.5 requires the engine 0.12.7 native Spot and numeric contracts,
 including the earlier 0.12.6 chronology and midnight-risk corrections.
 Older engines are outside this release's dependency range; users
 reproducing old results retain their exact earlier engine and adapter pins.
@@ -36,7 +36,9 @@ sibling virtualenv or treat a source override as installed-pair release evidence
 
 Native Grid/DCA uses the published engine 0.12.7 contract; follow the exact-wheel
 [Spot release prerequisites](spot_multi_order.md) before publishing the adapter.
-The local 0.12.4 candidate and its passing acceptance do not establish publication.
+The local 0.12.5 candidate and its passing acceptance do not establish publication.
+The [0.12.5 guide](../docs/release-0.12.5.md) owns this patch's manual sequence
+and downstream software-identity migration rules.
 
 1. Update `[project].version`.
 2. Add a `## [x.y.z]` section to `CHANGELOG.md`. The release workflow extracts
@@ -63,6 +65,12 @@ Publishing is irreversible: a filename on PyPI can never be reused, even after
 deletion. The gates run before the upload for that reason.
 
 ## Local release validation
+
+Build and development environments require `setuptools>=77.0.3` for the
+SPDX `project.license` expression and `project.license-files` metadata. Older
+backends cannot parse this format; do not lower the requirement to reuse an
+older environment. Both dependency declarations are guarded by
+`tests/test_package_metadata.py`.
 
 Build with `python -m build`. Every local wheel and sdist must match current
 package bytes and version metadata; the default suite rejects stale artifacts.

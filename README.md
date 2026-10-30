@@ -26,6 +26,11 @@ Version 0.12.4 adds native historical Spot Grid/DCA and numeric graph values.
 It requires the published engine 0.12.7 contracts and verifies installed wheel
 pairs with engines 0.12.7 and 0.12.8. Engine 0.12.6 can retain adapter 0.12.3.
 
+Version 0.12.5 preserves working protection when instrument filters refuse a
+replacement after partial execution, enforces native Spot protocol 2, and fixes
+build metadata compatibility and API documentation. See the
+[0.12.5 release guide](docs/release-0.12.5.md) for validation and adoption.
+
 Execution costs are an explicit, versioned model rather than a hidden default.
 What it does and does not simulate is stated in full in the
 [execution model](https://github.com/koval-finance/koval-backtrader/blob/main/docs/execution-model.md),
@@ -44,7 +49,7 @@ with protection. Separate exit evidence and unfinished terminal intent survive
 export. Only explicit `take_profit_mode="disabled"` suppresses the target;
 missing/default bracket and old null targets retain their previous fallback.
 
-Adapter 0.12.4 requires engine 0.12.7 or later in the 0.12 series. A graph
+Adapter 0.12.5 requires engine 0.12.7 or later in the 0.12 series. A graph
 requiring either capability fails before simulation resources are created when
 the execution profile cannot support it. Paper and live hosts do not support
 these features. See the [execution model](docs/execution-model.md)
@@ -242,6 +247,7 @@ before it can execute.
 | [Execution research](https://github.com/koval-finance/koval-backtrader/blob/main/docs/execution-research.md) | Primary sources, decision matrix and staged follow-ups |
 | [Execution validation](https://github.com/koval-finance/koval-backtrader/blob/main/docs/execution-validation.md) | Test evidence, reconciliation example and review findings |
 | [Execution readiness](https://github.com/koval-finance/koval-backtrader/blob/main/docs/execution-plan.md) | Timing fixes, compatibility decisions and what stays deferred |
+| [Founder Spot technical review](docs/technical-review-2026-10-30.md) | Architecture, contract findings, fixes and readiness limits as of 2026-10-30 |
 | [Results reference](https://github.com/koval-finance/koval-backtrader/blob/main/docs/results.md) | Every metric, trade field, and event |
 | [Writing strategies](https://github.com/koval-finance/koval-backtrader/blob/main/docs/strategies.md) | Hooks, injected state, a complete working example |
 | [Architecture](https://github.com/koval-finance/koval-backtrader/blob/main/docs/architecture.md) | Code walkthrough, and where to change what |

@@ -13,6 +13,8 @@ below matches what you are doing.
 | Inspect cost-model research and follow-ups | [execution-research.md](execution-research.md) |
 | Audit execution tests and reconciliation | [execution-validation.md](execution-validation.md) |
 | Review timing fixes and deferred effects | [execution-plan.md](execution-plan.md) |
+| Read the 2026-10-30 Founder Spot technical review | [technical-review-2026-10-30.md](technical-review-2026-10-30.md) |
+| Publish and adopt patch 0.12.5 | [release-0.12.5.md](release-0.12.5.md) |
 | Write a strategy | [strategies.md](strategies.md) |
 | Change the adapter's code | [architecture.md](architecture.md) |
 | Replace Backtrader with something else | [custom-engines.md](custom-engines.md) |

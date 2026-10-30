@@ -167,7 +167,10 @@ class BTStrategyAdapter(bt.Strategy):
         payload = dict(payload or {})
         payload["event_id"] = f"event-{len(self._events) + 1}"
         payload.setdefault("decision_id", self._trace.decision_id)
-        if event_type == EventType.ORDER_REJECTED:
+        if (
+            event_type == EventType.ORDER_REJECTED
+            and payload.get("operation") != "protection_replace"
+        ):
             self._trace.reject(payload)
         event = EngineEvent(
             event_type=event_type,
@@ -680,12 +683,35 @@ class BTStrategyAdapter(bt.Strategy):
         target_sl = new_sl if sl_changed else current_sl
         target_tp = new_tp if tp_changed else current_tp
 
-        normalize = getattr(self.broker, "normalize_protection", None)
-        if normalize is not None:
-            target_sl, target_tp = normalize(self, target_sl, target_tp)
         validator = (
             validate_protection_update if target_tp is not None else validate_stop_only_update
         )
+        # Invalid strategy instructions remain defects. A valid instruction
+        # refused by time-valid venue filters leaves the working pair intact.
+        validator(
+            side="buy" if is_long else "sell",
+            current_stop=current_sl,
+            stop_price=target_sl,
+            **({"target_price": target_tp} if target_tp is not None else {}),
+        )
+        normalize = getattr(self.broker, "normalize_protection", None)
+        if normalize is not None:
+            try:
+                target_sl, target_tp = normalize(self, target_sl, target_tp)
+            except ValueError as exc:
+                self._emit(
+                    EventType.ORDER_REJECTED,
+                    {
+                        "operation": "protection_replace",
+                        "protection_order_id": self.broker.order_id(self._stop_order),
+                        "direction": "long" if is_long else "short",
+                        "size": size,
+                        "stop_loss": target_sl,
+                        "take_profit": target_tp,
+                        "reason": f"instrument_constraint: {exc}",
+                    },
+                )
+                return
         validator(
             side="buy" if is_long else "sell",
             current_stop=current_sl,

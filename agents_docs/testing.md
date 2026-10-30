@@ -37,7 +37,7 @@ workflow, sdist contents, version.
 Native Spot acceptance is documented in [spot_multi_order.md](spot_multi_order.md).
 `test_spot_multi_order.py` consumes all 16 independent engine fixtures and compares
 all 11 candle reports with paper, through the normal plugin loader.
-Adapter 0.12.4 tests the published engine 0.12.7 floor and latest 0.12.8 as exact
+Adapter 0.12.5 tests the published engine 0.12.7 floor and latest 0.12.8 as exact
 installed wheel pairs. `test_engine_compatibility.py` executes the public level
 graph and its volume-veto variant with independent fill/fee/cash assertions.
 The runtime-boundary test reads its named fixture: other JSON schemas in the
@@ -127,6 +127,10 @@ latency protect the allocation tolerance from becoming a dust filter.
 `test_protection_chronology.py` covers both profiles, long/short exact opening
 touches and gaps, adverse costs, same-bar limit entry, partial/zero liquidity,
 OCO resizing/cancellation, activation delays and signal-request invariance.
+`test_protection_replacement.py` covers instrument-filter refusal after partial
+inventory changes: the original working stop/OCO, account state, carried-entry
+protection and successful entry intent survive, while the refusal is persisted
+as a separate replacement rejection. Invalid strategy instructions still raise.
 `test_daily_risk_rollover.py` compares actual adapter and LiveEngine account
 snapshots around UTC midnight, including losses, gains, fees and blocked
 re-entry. Adapter 0.12.3 requires engine 0.12.6 for this acceptance. Older

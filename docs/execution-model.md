@@ -85,7 +85,7 @@ and does not offer numeric broker resume or crash recovery.
 Native bounded Grid/DCA has a separately versioned [Spot execution model](spot-multi-order.md).
 The legacy profiles described below keep their existing semantics.
 
-Adapter 0.12.4 requires `koval-engine>=0.12.7,<0.13.0` for native Spot and numeric
+Adapter 0.12.5 requires `koval-engine>=0.12.7,<0.13.0` for native Spot and numeric
 contracts, including the corrected opening-price and midnight-risk contract.
 Earlier adapter releases and their
 exact engine pins retain the older behavior; historical acceptance records do
@@ -104,7 +104,7 @@ fills. See the [verification and review record](execution-validation.md).
 ### Historical signal exits and optional targets
 
 Available from adapter 0.12.2 with the published engine 0.12.4 contracts.
-Adapter 0.12.4 includes those engine contracts through its minimum dependency;
+Adapter 0.12.5 includes those engine contracts through its minimum dependency;
 unsupported profiles still refuse them before simulation resources are created.
 
 `position_exit_v1` and `optional_take_profit_v1` are offered only by
@@ -320,9 +320,15 @@ they are not optimistic/pessimistic bounds on the strategy's total return.
 Both hooks run after broker processing, including on the entry-fill bar.
 The final pair must be finite and positive, ordered stop < target for a long
 and target < stop for a short. A stop cannot widen risk. Profit locks are
-allowed. Invalid replacements fail before cancellation; valid replacements
-rebuild the OCO pair and update a carried entry remainder. With instrument
-evidence, replacement prices are normalized before final validation.
+allowed. Invalid strategy instructions fail before cancellation. If historical
+instrument filters refuse an otherwise valid replacement, the run emits
+`ORDER_REJECTED` with `operation="protection_replace"` and an
+`instrument_constraint` reason, retaining the working stop/target, account stop,
+and carried entry remainder unchanged. This includes a partial close leaving
+inventory below a replacement's minimum quantity or notional; the filter is
+not bypassed. Accepted replacements rebuild the OCO pair and update a carried
+entry remainder. With instrument evidence, replacement prices are normalized
+before final validation.
 
 ## Position sizing
 

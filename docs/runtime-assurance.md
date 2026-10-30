@@ -154,7 +154,7 @@ python -m build
 python scripts/check_dist.py --require-artifacts
 python scripts/verify_pair.py \
   --engine /path/to/koval_engine-0.12.8-py3-none-any.whl \
-  --plugin dist/koval_backtrader-0.12.4-py3-none-any.whl \
+  --plugin dist/koval_backtrader-0.12.5-py3-none-any.whl \
   --python /path/to/python3.11 \
   --output data_cache/pair-acceptance.json
 ```
@@ -166,7 +166,7 @@ editable/sibling package imports. The manifest records wheel hashes, versions,
 Python/platform, dependencies, verifier/test source identity and gate outcome.
 Retain its logs and artifacts in durable storage outside a disposable cache.
 
-For adapter 0.12.4, CI tests engines 0.12.7 and 0.12.8 with the built plugin on
+For adapter 0.12.5, CI tests engines 0.12.7 and 0.12.8 with the built plugin on
 Python 3.11 and 3.13. Both engine wheels are published on PyPI.
 Local candidate validation and hosted CI are separate evidence.
 

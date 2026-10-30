@@ -102,6 +102,27 @@ def test_the_licence_is_declared_as_gpl():
     assert project["license-files"] == ["LICENSE"]
 
 
+@pytest.mark.parametrize("group", ["build", "dev"])
+@pytest.mark.parametrize("version", ["68.0.0", "76.1.0"])
+def test_build_requirements_exclude_backends_without_pep639(group, version):
+    """Older backends cannot parse this project's SPDX licence metadata."""
+    from packaging.requirements import Requirement
+
+    project = _pyproject()
+    dependencies = (
+        project["build-system"]["requires"]
+        if group == "build"
+        else project["project"]["optional-dependencies"]["dev"]
+    )
+    requirement = next(
+        Requirement(dependency)
+        for dependency in dependencies
+        if Requirement(dependency).name == "setuptools"
+    )
+    assert version not in requirement.specifier
+    assert "77.0.3" in requirement.specifier
+
+
 def _imported_roots(tree: ast.AST):
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):

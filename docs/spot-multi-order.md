@@ -7,7 +7,7 @@ and one fill-based shared target. Scheduled DCA is unsupported.
 
 ## Compatibility and release status
 
-Adapter 0.12.4 requires `koval-engine>=0.12.7,<0.13.0`, using the published
+Adapter 0.12.5 requires `koval-engine>=0.12.7,<0.13.0`, using the published
 `koval.engine.spot_multi_order` contract. Normal and release CI verify the exact
 engine 0.12.7 and 0.12.8 wheels with the built adapter. Missing APIs fail closed.
 Local candidate acceptance is recorded in

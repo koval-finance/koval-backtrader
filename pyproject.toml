@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77.0.3", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "koval-backtrader"
-version = "0.12.4"
+version = "0.12.5"
 description = "Backtrader backtest engine for koval-engine: a GPL-3.0 plugin that runs typed strategy graphs through Cerebro."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -41,7 +41,7 @@ dev = [
     "pytest>=8.1",
     "PyYAML>=6.0",
     "ruff>=0.4",
-    "setuptools>=68",
+    "setuptools>=77.0.3",
     "twine>=5.1",
     "wheel",
 ]

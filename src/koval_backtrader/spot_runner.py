@@ -8,6 +8,7 @@ import backtrader as bt
 from koval.engine.backtest_engine import (
     BacktestResult,
     ExecutionCapabilities,
+    ProtocolVersionError,
     negotiate_execution_capabilities,
 )
 
@@ -156,6 +157,9 @@ def _observation_run(config, graph, session, on_record):
 
 @exact
 def run_spot(spec, on_event=None):
+    if spec.protocol_version != 2:
+        raise ProtocolVersionError("native Spot requires protocol version 2")
+
     from koval_backtrader.backtest_runner import _validate_fixed_inputs
 
     negotiated = negotiate_execution_capabilities(spec, ExecutionCapabilities((2,), FEATURES))

@@ -5,7 +5,11 @@ from copy import deepcopy
 
 import numpy as np
 import pytest
-from koval.engine.backtest_engine import EngineRunSpec, load_backtest_engine
+from koval.engine.backtest_engine import (
+    EngineRunSpec,
+    ProtocolVersionError,
+    load_backtest_engine,
+)
 from koval.engine.spot_multi_order import (
     SpotPaperSessionV1,
     compare_spot_execution_reports,
@@ -245,6 +249,15 @@ def test_invalid_admission_emits_no_records(mutation, match):
     mutation(spec)
     events = []
     with pytest.raises((ValueError, RuntimeError), match=match):
+        load_backtest_engine().run(spec, events.append)
+    assert events == []
+
+
+def test_native_spot_requires_protocol_two_before_emitting_records():
+    spec = spec_for(case_named("grid_control"))
+    spec.protocol_version = 1
+    events = []
+    with pytest.raises(ProtocolVersionError, match="Spot.*protocol version 2"):
         load_backtest_engine().run(spec, events.append)
     assert events == []
 

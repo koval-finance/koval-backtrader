@@ -311,7 +311,8 @@ candles; they do not prove those candles are the real history.
 
 The canonical fields are `schema_version: koval_run_identity_v1`,
 `market_identity`, `dataset_identity`, `execution_identity`, `strategy_sha256`,
-`run_parameters`, `comparability` and `producer`. Primary stream hashes use
+`run_parameters`, `reproducibility_grade` and `producer`. The canonical grade is
+`identified_simulation` or `not_comparable`. Primary stream hashes use
 engine `koval_candle_stream_sha256_v1`; the older `feeds` hashes use the plugin
 encoding and are not interchangeable. Execution identity uses the paired paper
 profile and hashes all supplied normalized evidence. `identified_simulation`
@@ -398,7 +399,7 @@ receives a plain dict:
 | `ORDER_FILLED` | Entry filled; bracket placed | `direction`, `fill_price`, `size`, `commission`, and the revalidated risk below |
 | `TRADE_OPENED` | Position opened | `trade_id`, `direction`, `entry_price`, `stop_loss`, `take_profit`, `why_entry` |
 | `TRADE_CLOSED` | Position closed | `trade_id`, `pnl`, `pnl_comm`, `exit_reason`, `entry_price`, `exit_price` |
-| `ORDER_REJECTED` | An entry was refused or cancelled | `direction`, `entry_type`, `reason`, plus `size`/`price`/`required`/`available` where known |
+| `ORDER_REJECTED` | An entry was refused/cancelled or instrument filters refused a protection replacement | Entry fields: `direction`, `entry_type`, `reason`, plus `size`/`price`/`required`/`available` where known. Replacement fields are described below. |
 | `DRAWDOWN_LIMIT_HIT` | `max_drawdown` breached after a close | `drawdown_pct`, `limit` |
 | `SESSION_END` | Last bar | `total_trades`, `final_value` |
 
@@ -435,6 +436,13 @@ did not pay. Under `legacy_v1` with no fees, `actual_risk` collapses to
 `rejected`, and `spot_short_unsupported` when a declared spot market cannot
 support the direction. A rejection is an event, not a halt: the strategy
 keeps running and may size a different entry later.
+
+Instrument normalization may also refuse an otherwise valid stop/target
+replacement. That `ORDER_REJECTED` payload has `operation="protection_replace"`,
+`protection_order_id` for the working stop, `size`, the requested `stop_loss` and
+`take_profit`, and `reason="instrument_constraint: ..."`. The existing stop and
+target remain working, and the filled entry intent is unchanged. Invalid,
+widening or nonfinite strategy updates still raise before changing protection.
 
 ### Reading `TRADE_CLOSED`
 

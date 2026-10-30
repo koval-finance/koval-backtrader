@@ -68,6 +68,14 @@ of timeframe to OHLCV array, initial capital, and an optional execution
 config. `BacktestResult` is equally plain: metrics, trades, equity curve. No
 Backtrader object crosses the boundary in either direction.
 
+Specs also carry the requested `execution_contract_version` and
+`required_execution_capabilities`; protocol 2 adds optional `runtime_contract`
+boundaries. Protocol validation and execution negotiation are separate checks:
+unsupported requested features must fail before construction. Native Spot
+requires protocol 2, execution contract 2 and its binding interval, and refuses
+legacy `runtime_contract` boundaries.
+The complete input fields are listed in [the plugin contract](../docs/custom-engines.md#the-contract).
+
 ## Modules
 
 Native Grid/DCA uses a separate [historical Spot lane](spot_multi_order.md).
@@ -292,3 +300,11 @@ holds exit intents separately from entry intents, and the trade joins its exit
 context to a signal order whose actual fill IDs remain in the ledger. Mixed exits
 use their final fill reason and do not count as fully signal-closed positions.
 See [../docs/results.md](../docs/results.md) for the exported field contract.
+
+Protection replacement validates the raw strategy instruction before instrument
+normalization and validates the normalized bracket afterward. A time-valid
+instrument-filter refusal emits `ORDER_REJECTED` with
+`operation="protection_replace"` before any cancellation or account/history
+mutation. The working pair and any carried entry retain their previous prices.
+This refusal does not reject the original successful entry intent; malformed
+or widening strategy instructions still raise explicitly.

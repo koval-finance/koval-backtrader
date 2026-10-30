@@ -179,7 +179,7 @@ See [declaring the market](execution-model.md#declaring-the-market).
   bounds simply cannot be stated in milliseconds.
 
 `partial` is the retained legacy grade and never becomes `full`, even with
-all labels present. Use canonical `comparability`, stream/profile identities
+all labels present. Use canonical `reproducibility_grade`, stream/profile identities
 and the release review together. `identified_simulation` identifies inputs;
 it is not a certification of archive quality or exchange fidelity.
 

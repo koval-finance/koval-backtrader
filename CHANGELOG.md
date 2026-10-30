@@ -6,6 +6,44 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.5] - 2026-10-30
+
+### Fixed
+
+- Retain working stop/target protection when instrument minimum quantity or
+  notional rules refuse a replacement after partial execution. Emit a distinct
+  protection-replacement rejection without changing the filled entry intent,
+  account stop, carried-entry protection or stop history. Invalid strategy
+  updates still fail before changing orders.
+- Require outer protocol 2 before starting native historical Spot Grid/DCA,
+  matching the published lane contract while retaining protocol 1 legacy runs.
+- Require `setuptools>=77.0.3` in build and development environments so the
+  declared SPDX licence expression and licence-file metadata can be parsed.
+- Correct canonical run-identity documentation to `reproducibility_grade` and
+  document all current run-spec fields, capability negotiation and unsupported
+  assumptions in the custom-engine example.
+
+### Validation
+
+- Add residual-filter, carried-entry and invalid-update regressions, native
+  protocol refusal before journal output, and build-backend compatibility guards.
+- Record the architecture, API and Founder Spot readiness review in
+  [the technical report](docs/technical-review-2026-10-30.md).
+
+### Compatibility
+
+- Retain `koval-engine>=0.12.7,<0.13.0` and the engine 0.12.7/0.12.8
+  installed-pair matrix. The recommended application adoption pair is engine
+  0.12.8 / adapter 0.12.5; no engine upgrade or new runtime dependency is needed.
+- Protection replacement refusals now emit `ORDER_REJECTED` with
+  `operation="protection_replace"`; malformed strategy updates still raise.
+  Native Grid/DCA callers must use outer protocol 2 and execution contract 2.
+- Existing software-bound archives, checkpoints, candidates and application
+  acceptance locks retain their original identities. Adoption requires new
+  evidence for the new pair; old records must not be relabeled.
+- See the [release guide](docs/release-0.12.5.md) for manual publication and
+  downstream adoption boundaries.
+
 ## [0.12.4] - 2026-10-29
 
 ### Added
@@ -362,7 +400,8 @@ First public release. Extracted from a private monorepo with a clean history.
 - Releases publish to PyPI through Trusted Publishing (OIDC) with PEP 740
   attestations. No long-lived PyPI credential is used.
 
-[Unreleased]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.4...HEAD
+[Unreleased]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.5...HEAD
+[0.12.5]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.4...v0.12.5
 [0.12.4]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.3...v0.12.4
 [0.12.3]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/koval-finance/koval-backtrader/compare/v0.12.1...v0.12.2
